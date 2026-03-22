@@ -85,6 +85,69 @@ def load_mentored_edges(
 
 
 # ---------------------------------------------------------------------------
+# McIllece-specific loader (keyed on coach_code)
+# ---------------------------------------------------------------------------
+
+
+def load_mentored_edges_mcillece(
+    driver: Driver,
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> int:
+    """MERGE MENTORED relationships inferred from McIllece staff records.
+
+    Coaches are matched by ``coach_code`` — the unique identifier from the
+    McIllece dataset — rather than by name.  This avoids name-collision
+    issues and is idempotent on re-runs.
+
+    Args:
+        driver: Open Neo4j driver.
+        pairs: List of ``(mentor_dict, mentee_dict)`` tuples as returned by
+            ``infer_mentored_pairs_mcillece()``.  Each dict must have a
+            ``coach_code`` key.
+
+    Returns:
+        Total number of MENTORED edges now present in the graph.
+    """
+    if not pairs:
+        logger.info("No McIllece pairs to load — skipping MERGE")
+        with driver.session() as session:
+            result = session.run(
+                f"MATCH ()-[:{schema.MENTORED}]->() RETURN count(*) AS total"
+            )
+            total: int = result.single()["total"]
+        print(f"Total MENTORED edges in graph: {total:,}")
+        return total
+
+    merge_query = f"""
+    UNWIND $rows AS row
+    MATCH (mentor:{schema.COACH} {{coach_code: row.mentor_code}})
+    MATCH (mentee:{schema.COACH} {{coach_code: row.mentee_code}})
+    MERGE (mentor)-[:{schema.MENTORED}]->(mentee)
+    """
+
+    rows: list[dict[str, Any]] = [
+        {
+            "mentor_code": mentor["coach_code"],
+            "mentee_code": mentee["coach_code"],
+        }
+        for mentor, mentee in pairs
+    ]
+
+    with driver.session() as session:
+        session.run(merge_query, rows=rows)
+
+    logger.info("Merged %d McIllece MENTORED pairs", len(pairs))
+
+    count_query = f"MATCH ()-[:{schema.MENTORED}]->() RETURN count(*) AS total"
+    with driver.session() as session:
+        result = session.run(count_query)
+        total = result.single()["total"]
+
+    print(f"Total MENTORED edges in graph: {total:,}")
+    return total
+
+
+# ---------------------------------------------------------------------------
 # Standalone entry-point
 # ---------------------------------------------------------------------------
 

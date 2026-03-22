@@ -6,6 +6,10 @@ The more senior coach (earlier first year at that school) is the mentor.
 If both coaches first joined that school in the same year the direction
 cannot be determined and the pair is skipped.
 
+For McIllece data (which includes per-season roles), seniority is
+determined first by role priority (HC > OC > DC > all others) and falls
+back to earlier first appearance year when role priorities are tied.
+
 Usage (standalone):
     python -m ingestion.build_mentored_edges
 """
@@ -20,6 +24,14 @@ from typing import Any
 from neo4j import Driver
 
 logger = logging.getLogger(__name__)
+
+# Role priority for McIllece data: higher number = more senior.
+# Any role not listed here gets priority 0 (position coach).
+ROLE_PRIORITY: dict[str, int] = {
+    "HC": 3,
+    "OC": 2,
+    "DC": 2,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +127,106 @@ def infer_mentored_pairs(
         (
             {"first_name": mentor[0], "last_name": mentor[1]},
             {"first_name": mentee[0], "last_name": mentee[1]},
+        )
+        for mentor, mentee in seen
+    ]
+
+
+# ---------------------------------------------------------------------------
+# McIllece-specific inference (role-aware)
+# ---------------------------------------------------------------------------
+
+
+def infer_mentored_pairs_mcillece(
+    staff: list[dict[str, Any]],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Infer MENTORED pairs from McIllece staff records using role priority.
+
+    Algorithm:
+    1. Group stints by ``team`` (school name).
+    2. For each school, build a map of ``coach_code`` → ``{year: [roles]}``.
+    3. For every unique pair of coaches at that school, check whether their
+       year-sets intersect (≥ 1 shared season).
+    4. If they overlap, determine the mentor:
+       a. Compute each coach's *best* role priority across the overlapping
+          seasons (HC=3, OC=DC=2, everything else=0).
+       b. The coach with the higher priority is the mentor.
+       c. If priorities are equal, the coach with the earlier first year at
+          that school is the mentor.
+       d. If priorities *and* first years are equal, direction is ambiguous
+          — skip the pair.
+    5. Deduplicate ``(mentor_code, mentee_code)`` across all schools.
+
+    Args:
+        staff: Cleaned staff records as returned by
+            ``ingestion.pull_mcillece_staff.load_mcillece_file()``.
+
+    Returns:
+        Deduplicated list of ``(mentor_dict, mentee_dict)`` tuples where
+        each dict has ``coach_code`` and ``coach_name`` keys.
+    """
+    # {school: {coach_code: {year: [roles]}}}
+    school_coach_data: dict[str, dict[int, dict[int, list[str]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+    # {coach_code: coach_name}  (last write wins — names are stable)
+    code_to_name: dict[int, str] = {}
+
+    for rec in staff:
+        code = rec["coach_code"]
+        code_to_name[code] = rec["coach_name"]
+        school_coach_data[rec["team"]][code][rec["year"]].extend(rec["roles"])
+
+    seen: set[tuple[int, int]] = set()
+
+    for school, coach_data in school_coach_data.items():
+        codes = list(coach_data.keys())
+        for i in range(len(codes)):
+            for j in range(i + 1, len(codes)):
+                c1, c2 = codes[i], codes[j]
+                years1 = set(coach_data[c1])
+                years2 = set(coach_data[c2])
+
+                overlap_years = years1 & years2
+                if not overlap_years:
+                    continue
+
+                # Best role priority for each coach across the overlap
+                def _best_priority(code: int, years: set[int]) -> int:
+                    best = 0
+                    for yr in years:
+                        for role in coach_data[code].get(yr, []):
+                            best = max(best, ROLE_PRIORITY.get(role.upper(), 0))
+                    return best
+
+                p1 = _best_priority(c1, overlap_years)
+                p2 = _best_priority(c2, overlap_years)
+
+                if p1 != p2:
+                    mentor, mentee = (c1, c2) if p1 > p2 else (c2, c1)
+                else:
+                    # Fall back to earlier first year at this school
+                    start1 = min(years1)
+                    start2 = min(years2)
+                    if start1 == start2:
+                        logger.debug(
+                            "Skipping %s / %s at %s — equal priority and start year",
+                            code_to_name.get(c1, c1),
+                            code_to_name.get(c2, c2),
+                            school,
+                        )
+                        continue
+                    mentor, mentee = (c1, c2) if start1 < start2 else (c2, c1)
+
+                pair_key = (mentor, mentee)
+                seen.add(pair_key)
+
+    logger.info("Inferred %d unique MENTORED pairs (McIllece)", len(seen))
+
+    return [
+        (
+            {"coach_code": mentor, "coach_name": code_to_name.get(mentor, "")},
+            {"coach_code": mentee, "coach_name": code_to_name.get(mentee, "")},
         )
         for mentor, mentee in seen
     ]
