@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 ROLE_LEGEND: dict[str, str] = {
+    "AC": "Assistant Head Coach",
     "CB": "Cornerbacks",
     "DB": "Defensive Backs",
     "DC": "Defensive Coordinator",
@@ -66,7 +67,7 @@ TIER_POSITION_COACH = "POSITION_COACH"
 TIER_SUPPORT = "SUPPORT"
 TIER_UNKNOWN = "UNKNOWN"
 
-_COORDINATOR_ABBRS: frozenset[str] = frozenset({"HC", "OC", "DC", "PG", "PD", "RG", "RD"})
+_COORDINATOR_ABBRS: frozenset[str] = frozenset({"HC", "AC", "OC", "DC", "PG", "PD", "RG", "RD"})
 _POSITION_COACH_ABBRS: frozenset[str] = frozenset({
     "QB", "RB", "WR", "OL", "DL", "DB", "LB", "TE",
     "DE", "DT", "CB", "SF", "IB", "OB", "IR", "GC", "OT",
@@ -78,6 +79,11 @@ _SUPPORT_ABBRS: frozenset[str] = frozenset({
 
 # Primary coordinator roles flagged separately for downstream coaching-tree work
 COORDINATOR_FLAG_ABBRS: frozenset[str] = frozenset({"HC", "OC", "DC"})
+
+# Known dirty variants in the raw data → canonical abbreviation
+_ABBR_NORMALIZATIONS: dict[str, str] = {
+    "RC?": "RC",
+}
 
 
 def _classify_tier(abbr: str) -> str:
@@ -133,7 +139,8 @@ def expand_to_role_records(
     unmapped: set[str] = set()
 
     for rec in staff:
-        for abbr in rec["roles"]:
+        for raw_abbr in rec["roles"]:
+            abbr = _ABBR_NORMALIZATIONS.get(raw_abbr, raw_abbr)
             full_name = ROLE_LEGEND.get(abbr)
             if full_name is None:
                 unmapped.add(abbr)
@@ -152,7 +159,7 @@ def expand_to_role_records(
                     "year": rec["year"],
                     "team": rec["team"],
                     "coach_name": rec["coach_name"],
-                    "role_abbr": abbr,
+                    "role_abbr": abbr,  # canonical (normalized) abbreviation
                     "role": full_name,
                     "role_tier": _classify_tier(abbr),
                     "is_coordinator": abbr in COORDINATOR_FLAG_ABBRS,

@@ -93,9 +93,9 @@ class TestClassifyTier:
     def test_unknown_abbr_is_unknown(self):
         assert _classify_tier("ZZ") == TIER_UNKNOWN
 
-    def test_ac_is_unknown(self):
-        """AC appears in data but not the legend — should be UNKNOWN."""
-        assert _classify_tier("AC") == TIER_UNKNOWN
+    def test_ac_is_coordinator(self):
+        """AC (Assistant Head Coach) is a senior role — COORDINATOR tier."""
+        assert _classify_tier("AC") == TIER_COORDINATOR
 
 
 # ---------------------------------------------------------------------------
@@ -105,14 +105,17 @@ class TestClassifyTier:
 
 class TestRoleLegend:
     def test_legend_has_expected_abbrs(self):
-        """All 37 legend abbreviations must be present."""
+        """All 38 legend abbreviations (including AC) must be present."""
         expected = {
-            "CB", "DB", "DC", "DE", "DF", "DL", "DT", "FB", "FG", "GC",
-            "HC", "IB", "IR", "KO", "KR", "LB", "NB", "OB", "OC", "OF",
-            "OL", "OR", "OT", "PD", "PG", "PK", "PR", "PT", "QB", "RB",
-            "RC", "RD", "RG", "SF", "ST", "TE", "WR",
+            "AC", "CB", "DB", "DC", "DE", "DF", "DL", "DT", "FB", "FG",
+            "GC", "HC", "IB", "IR", "KO", "KR", "LB", "NB", "OB", "OC",
+            "OF", "OL", "OR", "OT", "PD", "PG", "PK", "PR", "PT", "QB",
+            "RB", "RC", "RD", "RG", "SF", "ST", "TE", "WR",
         }
         assert expected <= set(ROLE_LEGEND.keys())
+
+    def test_ac_maps_to_assistant_head_coach(self):
+        assert ROLE_LEGEND["AC"] == "Assistant Head Coach"
 
     def test_hc_maps_to_head_coach(self):
         assert ROLE_LEGEND["HC"] == "Head Coach"
@@ -149,7 +152,7 @@ class TestExpandToRoleRecords:
     def test_two_roles_expand_to_two_records(self):
         staff = [{"coach_code": 2, "team_code": 8, "year": 2020,
                   "team": "Alabama", "coach_name": "DC/IB", "roles": ["DC", "IB"]}]
-        records, unmapped = expand_to_role_records(staff)
+        records, _ = expand_to_role_records(staff)
         assert len(records) == 2
         abbrs = {r["role_abbr"] for r in records}
         assert abbrs == {"DC", "IB"}
@@ -208,13 +211,24 @@ class TestExpandToRoleRecords:
         assert records[0]["role_tier"] == TIER_UNKNOWN
         assert records[0]["role"] == "ZZ"  # falls back to raw abbr
 
+    def test_rc_question_mark_normalised_to_rc(self):
+        """RC? is a dirty data variant; it must be normalised to RC."""
+        staff = [{"coach_code": 55, "team_code": 3, "year": 2012,
+                  "team": "Test U", "coach_name": "Recruiter", "roles": ["RC?"]}]
+        records, unmapped = expand_to_role_records(staff)
+        assert len(records) == 1
+        assert records[0]["role_abbr"] == "RC"
+        assert records[0]["role"] == "Recruiting Coordinator"
+        assert records[0]["role_tier"] == TIER_SUPPORT
+        assert unmapped == []  # not flagged as unknown after normalization
+
     def test_unmapped_abbr_data_not_dropped(self):
         """Unknown abbreviation still produces a record — no silent data loss."""
         staff = [{"coach_code": 99, "team_code": 1, "year": 2010,
-                  "team": "Test U", "coach_name": "Mystery", "roles": ["AC"]}]
+                  "team": "Test U", "coach_name": "Mystery", "roles": ["ZZ"]}]
         records, unmapped = expand_to_role_records(staff)
         assert len(records) == 1
-        assert "AC" in unmapped
+        assert "ZZ" in unmapped
 
     def test_empty_staff_returns_empty(self):
         records, unmapped = expand_to_role_records([])
@@ -224,7 +238,7 @@ class TestExpandToRoleRecords:
     def test_empty_roles_list_produces_no_records(self):
         staff = [{"coach_code": 1, "team_code": 8, "year": 2020,
                   "team": "Alabama", "coach_name": "Admin", "roles": []}]
-        records, unmapped = expand_to_role_records(staff)
+        records, _ = expand_to_role_records(staff)
         assert records == []
 
     def test_year_and_codes_propagated_correctly(self, ala_2020_staff):
