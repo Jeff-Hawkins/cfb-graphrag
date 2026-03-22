@@ -120,7 +120,7 @@ def load_coaches(driver: Driver, coaches: list[dict[str, Any]]) -> int:
             "first_name": coach["first_name"],
             "last_name": coach["last_name"],
             "school": season["school"],
-            "title": season.get("games", {}) and season.get("title", ""),
+            "title": season.get("title", ""),
             "year": season["year"],
         }
         for coach in coaches

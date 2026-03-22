@@ -55,6 +55,12 @@ def fetch_rosters(
             file_path.write_text(json.dumps(records, indent=2))
             logger.info("Saved %d roster records for %d", len(records), year)
 
+        # Inject season_year so downstream consumers know which season each
+        # record belongs to.  The CFBD ``year`` field is the player's
+        # academic year (1 = Freshman), not the calendar season.
+        for r in records:
+            r["season_year"] = year
+
         all_records.extend(records)
 
     return all_records
