@@ -53,6 +53,7 @@ GEMINI_API_KEY=
 ```
 cfb-graphrag/
 ├── CLAUDE.md
+├── pipeline.py            ← full ingest → load → verify script (run from project root)
 ├── .env                   ← secrets, never committed
 ├── .env.example
 ├── .gitignore
@@ -63,7 +64,7 @@ cfb-graphrag/
 │   ├── __init__.py
 │   ├── pull_teams.py
 │   ├── pull_coaches.py
-│   ├── pull_rosters.py
+│   ├── pull_rosters.py    ← injects season_year into each record in-memory
 │   ├── pull_games.py
 │   └── utils.py           ← rate limiting, retry, shared helpers
 │
@@ -107,17 +108,41 @@ cfb-graphrag/
 
 ```
 (:Team {id, school, conference, abbreviation})
-(:Coach {id, first_name, last_name})
+(:Coach {first_name, last_name})
 (:Player {id, name, position, hometown})
 (:Conference {name})
-(:Season {year})
 
 (:Coach)-[:COACHED_AT {title, start_year, end_year}]->(:Team)
-(:Player)-[:PLAYED_FOR {year, jersey}]->(:Team)
+(:Player)-[:PLAYED_FOR {year, jersey}]->(:Team)    ← year = calendar season (2015–2025)
 (:Team)-[:IN_CONFERENCE]->(:Conference)
-(:Team)-[:PLAYED {home_score, away_score, season}]->(:Team)
+(:Team)-[:PLAYED {game_id, home_score, away_score, season, week}]->(:Team)
 (:Coach)-[:MENTORED]->(:Coach)
 ```
+
+## Live Graph State (as of Session 3)
+
+| Node label | Count |
+|---|---|
+| Player | 97,765 |
+| Team | 1,902 |
+| Coach | 1,786 |
+| Conference | 74 |
+
+| Relationship type | Count |
+|---|---|
+| PLAYED_FOR | 231,540 |
+| PLAYED | 26,918 |
+| COACHED_AT | 12,414 |
+| IN_CONFERENCE | 702 |
+| MENTORED | 163 |
+
+Data range: rosters and games 2015–2025. Coaches span all years recorded by CFBD.
+
+**MENTORED inference note:** CFBD `/coaches` only records **head-coaching tenures**, not
+assistant stints.  MENTORED edges are inferred from coaching-transition overlaps
+(e.g., interim head coach + incoming head coach at the same school in the same season).
+Famous staff hierarchies (Saban → Smart, etc.) are **not** captured because assistant
+roles are absent from the source data.
 
 ---
 
@@ -130,6 +155,21 @@ cfb-graphrag/
 - Save all raw API responses to `data/raw/` before transforming
 - Never re-hit the API if a local JSON file already exists
 - Shared HTTP helpers live in `ingestion/utils.py`
+
+## CFBD API Field Name Gotchas
+
+The CFBD API returns **camelCase** for most endpoints. The loaders expect **snake_case**.
+All normalization is done in `pipeline.py` before calling any loader function.
+
+| Endpoint | Raw field | Normalized to |
+|---|---|---|
+| `/coaches` | `firstName`, `lastName` | `first_name`, `last_name` |
+| `/roster` | `firstName`, `lastName`, `homeCity`, `homeState` | `name` (combined), `hometown` |
+| `/roster` | `year` (academic: 1–4) | use `season_year` injected by `pull_rosters` |
+| `/games` | `homeTeam`, `awayTeam`, `homePoints`, `awayPoints` | `home_team`, `away_team`, `home_points`, `away_points` |
+| `/teams` | matches loader expectations | no normalization needed |
+
+**Never pass raw CFBD records directly to loader functions** — always normalize first.
 
 ---
 
@@ -167,6 +207,21 @@ cfb-graphrag/
 - Tests mock `genai.GenerativeModel` instances directly: `model.generate_content.return_value.text = "..."`
 - `retriever` tests patch `graphrag.retriever.extract_entities` to isolate answer-generation logic
 
+## Running the Pipeline
+
+```bash
+# From project root — uses .env for all credentials
+python pipeline.py
+```
+
+- Ingestion is idempotent: skips any `data/raw/` file that already exists
+- Loading is idempotent: all Cypher uses `MERGE`
+- Neo4j uniqueness constraints are created automatically on first run
+- Load order is **Teams → Conferences → Coaches → Players → Games**
+  (Teams must exist before Conferences creates `IN_CONFERENCE` relationships)
+- Players batch size: 2,000 records per transaction
+- Games batch size: 2,000 records per transaction
+
 ---
 
-*Last updated: Session 2 — replaced Anthropic SDK with Google Gemini 2.0 Flash.*
+*Last updated: Session 3 — inferred and loaded 163 MENTORED coaching-tree edges. 35/35 tests pass.*
