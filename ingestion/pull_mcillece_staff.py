@@ -82,7 +82,7 @@ def _read_xlsx(path: Path) -> list[dict[str, Any]]:
     ws = wb.active
 
     headers = [
-        str(cell.value).strip().lower() if cell.value is not None else f"_col{i}"
+        str(cell.value).strip().lower().replace(" ", "_") if cell.value is not None else f"_col{i}"
         for i, cell in enumerate(ws[1])
     ]
 
@@ -100,7 +100,7 @@ def _read_csv(path: Path) -> list[dict[str, Any]]:
     with open(path, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         return [
-            {k.strip().lower(): v for k, v in row.items()}
+            {k.strip().lower().replace(" ", "_"): v for k, v in row.items()}
             for row in reader
         ]
 
