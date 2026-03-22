@@ -1,0 +1,5 @@
+[
+  {"id": 1, "school": "Alabama", "conference": "SEC", "abbreviation": "ALA"},
+  {"id": 2, "school": "Ohio State", "conference": "Big Ten", "abbreviation": "OSU"},
+  {"id": 3, "school": "Georgia", "conference": "SEC", "abbreviation": "UGA"}
+]
