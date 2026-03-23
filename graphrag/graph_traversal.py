@@ -67,6 +67,73 @@ def get_coaches_in_conferences(
         return [dict(record) for record in result]
 
 
+def get_coaching_tree(
+    coach_code: int,
+    max_depth: int,
+    driver: Driver,
+    role_filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the coaching tree rooted at a McIllece coach node.
+
+    Traverses MENTORED edges up to ``max_depth`` hops from the root node
+    identified by ``coach_code``.  When ``role_filter`` is ``"HC"``, only
+    mentees who have at least one mcillece_roles COACHED_AT edge with
+    ``role_abbr = "HC"`` are returned.
+
+    Args:
+        coach_code:  McIllece coach_code integer for the root coach.
+        max_depth:   Maximum traversal depth (1–4; values > 4 are clamped to 4).
+        driver:      Open Neo4j driver.
+        role_filter: Optional role abbreviation filter (e.g. ``"HC"``).
+            When provided, only mentees who held that role are included.
+
+    Returns:
+        List of dicts with keys:
+
+        - ``name``         — mentee's display name.
+        - ``coach_code``   — mentee's McIllece coach_code.
+        - ``depth``        — hop distance from root.
+        - ``path_coaches`` — list of coach names from root to this node
+          (feeds F1 provenance strings).
+    """
+    depth = max(1, min(int(max_depth), 4))
+
+    if role_filter:
+        query = """
+        MATCH path = (root:Coach {coach_code: $coach_code})-[:MENTORED*1..$depth]->(mentee:Coach)
+        WHERE EXISTS {
+            MATCH (mentee)-[r:COACHED_AT]->(:Team)
+            WHERE r.role_abbr = $role_filter AND r.source = 'mcillece_roles'
+        }
+        RETURN mentee.name          AS name,
+               mentee.coach_code    AS coach_code,
+               length(path)         AS depth,
+               [n IN nodes(path) | coalesce(n.name, n.first_name + ' ' + n.last_name)]
+                   AS path_coaches
+        ORDER BY depth, name
+        """
+        params: dict[str, Any] = {
+            "coach_code": coach_code,
+            "depth": depth,
+            "role_filter": role_filter,
+        }
+    else:
+        query = """
+        MATCH path = (root:Coach {coach_code: $coach_code})-[:MENTORED*1..$depth]->(mentee:Coach)
+        RETURN mentee.name          AS name,
+               mentee.coach_code    AS coach_code,
+               length(path)         AS depth,
+               [n IN nodes(path) | coalesce(n.name, n.first_name + ' ' + n.last_name)]
+                   AS path_coaches
+        ORDER BY depth, name
+        """
+        params = {"coach_code": coach_code, "depth": depth}
+
+    with driver.session() as session:
+        result = session.run(query, **params)
+        return [dict(record) for record in result]
+
+
 def shortest_path_between_coaches(
     driver: Driver, coach_a: str, coach_b: str
 ) -> list[dict[str, Any]]:

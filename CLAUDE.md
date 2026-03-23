@@ -140,9 +140,10 @@ cfb-graphrag/
 (:Team)-[:IN_CONFERENCE]->(:Conference)
 (:Team)-[:PLAYED {game_id, home_score, away_score, season, week}]->(:Team)
 (:Coach)-[:MENTORED]->(:Coach)
+(:Coach)-[:SAME_PERSON {match_type, confidence}]->(:Coach)  ← CFBD node → McIllece node (Session 4)
 ```
 
-## Live Graph State (as of Session 3D — Railway Neo4j)
+## Live Graph State (as of Session 4 — Railway Neo4j)
 
 | Node label | Count | Notes |
 |---|---|---|
@@ -158,7 +159,8 @@ cfb-graphrag/
 | PLAYED | 26,918 | CFBD |
 | IN_CONFERENCE | 702 | CFBD |
 | MENTORED | 26,244 | 163 CFBD overlaps + 26,081 McIllece staff overlap (2+ season filter) |
-| **Total** | **363,217** | |
+| SAME_PERSON | TBD | CFBD ↔ McIllece identity edges — run loader/load_identity_edges.py |
+| **Total** | **363,217+** | |
 
 Data range: rosters and games 2015–2025. McIllece staff data 2005–2025 (full FBS). Coaches span all years recorded by CFBD and McIllece.
 
@@ -237,11 +239,12 @@ All normalization is done in `pipeline.py` before calling any loader function.
 
 ## LLM Notes
 
-- All `graphrag/` modules use `google-generativeai` with model `gemini-2.0-flash`
-- `system_instruction` is set at `GenerativeModel` construction time — entity extraction and answer generation use **separate model instances** with different system prompts
-- In `retriever.py`, the `model` param controls answer generation only; `extract_entities` always creates its own model internally
-- Tests mock `genai.GenerativeModel` instances directly: `model.generate_content.return_value.text = "..."`
-- `retriever` tests patch `graphrag.retriever.extract_entities` to isolate answer-generation logic
+- All `graphrag/` modules use **`google-genai`** SDK (migrated from `google-generativeai` in Session 4) with model `gemini-2.0-flash`
+- API usage: `client = genai.Client(api_key=...)`, then `client.models.generate_content(model=..., contents=..., config=types.GenerateContentConfig(system_instruction=...))`
+- Functions accept an optional `client: genai.Client | None` param; each function creates its own client if None
+- Tests mock `client.models.generate_content.return_value.text = "..."`
+- `retriever` tests patch `graphrag.retriever.extract_entities` and `graphrag.retriever.classify_intent` to isolate answer-generation logic
+- `graphrag/classifier.py` added in Session 4 — routes every NL query to one of 5 intent buckets before the planner generates Cypher
 
 ## Running the Pipeline
 
@@ -315,4 +318,29 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 3D (Task 8) — MENTORED edges loaded from McIllece staff overlap data. infer_mentored_pairs_mcillece() updated to require 2+ season overlap. load_mentored_edges_mcillece() updated with 1,000-row batching and progress output. 26,081 McIllece MENTORED pairs MERGEd into Railway Neo4j (total 26,244 including 163 CFBD-based). Saban coaching tree (depth 1–3): 1,671 nodes, 11,110 edges, saved to data/visuals/saban_tree.html. render_saban_tree.py added at project root. 4 new tests added; 220/220 pass.*
+## Roadmap Protocol (Manual)
+
+1. At the start of every Claude Code session:
+   - Open docs/ROADMAP_FEATURES.md.
+   - Summarize the current phase and list all F* and A* items in that phase.
+   - Highlight which items are NOT marked as done yet.
+
+2. When we work on something:
+   - Ask me which specific F* or A* item(s) we are targeting.
+   - Keep track of those IDs (e.g., F2, F3, A1) in your running plan.
+
+3. Before the session ends:
+   - Propose concrete edits to docs/ROADMAP_FEATURES.md:
+     - Add or update a `Status:` line under each affected F* / A* item
+       (e.g., `Status: IN PROGRESS – 2026-03-23`, `Status: DONE – 2026-03-23`).
+     - Add 1–3 short bullet points under the IMPL section describing what changed.
+   - Show me a diff-style summary of those edits for approval.
+
+4. Rules:
+   - Never rename existing F* or A* IDs.
+   - New ideas go into a “Proposed” section at the bottom as F11, A9, etc.
+   - Do not rely on conversation memory for status; the roadmap file is the source of truth.
+
+---
+
+*Last updated: Session 4 — Identity resolution pipeline added (ingestion/match_coach_identity.py, loader/load_identity_edges.py). SAME_PERSON edge type added to schema (CFBD ↔ McIllece). google-generativeai migrated to google-genai SDK across all graphrag/ modules. resolve_coach_entity() added to entity_extractor.py. graphrag/classifier.py added with 5-bucket intent routing (TREE_QUERY | PERFORMANCE_COMPARE | PIPELINE_QUERY | CHANGE_IMPACT | SIMILARITY). get_coaching_tree() added to graph_traversal.py (McIllece MENTORED traversal, role_filter, max_depth 1–4, path_coaches provenance). retriever.py fully wired with classifier → entity resolution → intent-routed traversal → Gemini synthesis. demo_queries.py added at project root. 31 new tests added; 251/251 pass.*

@@ -10,7 +10,8 @@ import logging
 import os
 from pathlib import Path
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -53,25 +54,21 @@ def _load_text_corpus(raw_dir: Path = _RAW_DIR) -> str:
 def answer_question_vanilla(
     question: str,
     raw_dir: Path = _RAW_DIR,
-    model: genai.GenerativeModel | None = None,
+    client: genai.Client | None = None,
 ) -> str:
     """Answer a question using plain text keyword context (baseline).
 
     Args:
         question: Natural language question about college football.
         raw_dir: Directory with cached raw JSON files.
-        model: Optional ``genai.GenerativeModel``.  If omitted a new model
+        client: Optional ``genai.Client``.  If omitted a new client
             is created using ``GEMINI_API_KEY`` from the environment.
 
     Returns:
         A natural language answer string.
     """
-    if model is None:
-        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
-            system_instruction=_ANSWER_SYSTEM,
-        )
+    if client is None:
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
     corpus = _load_text_corpus(raw_dir)
     keywords = question.lower().split()
@@ -81,5 +78,9 @@ def answer_question_vanilla(
     ]
     context = "\n".join(relevant_lines[:200]) if relevant_lines else "No relevant data found."
 
-    response = model.generate_content(f"Question: {question}\n\nContext:\n{context}")
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=f"Question: {question}\n\nContext:\n{context}",
+        config=types.GenerateContentConfig(system_instruction=_ANSWER_SYSTEM),
+    )
     return response.text
