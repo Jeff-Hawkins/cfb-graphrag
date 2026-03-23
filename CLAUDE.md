@@ -312,4 +312,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 3C — Full FBS 2005–2025 McIllece dataset loaded. CFBD coverage audit complete. expand_roles.py built (role unpivot, ROLE_LEGEND, TEAM_NAME_MAP, tier classification). 39,031 per-role COACHED_AT edges in graph. 144/144 tests pass. Ready to rebuild MENTORED edges from McIllece data.*
+*Last updated: Session 3D — MENTORED edge dry run built. infer_mentored_edges_v2() (COORDINATOR mentor, 2+ consecutive yrs, one edge per (A,B,team)), fetch_coached_at_mcillece_roles(), compute_dry_run_stats(), save_dry_run_csv() added to build_mentored_edges.py. run_mentored_dry_run.py script at root saves results to data/audits/mentored_dry_run.csv. 185/185 tests pass.*

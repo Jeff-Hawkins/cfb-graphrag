@@ -14,10 +14,11 @@ Usage (standalone):
     python -m ingestion.build_mentored_edges
 """
 
+import csv
 import logging
 import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,27 @@ ROLE_PRIORITY: dict[str, int] = {
     "HC": 3,
     "OC": 2,
     "DC": 2,
+}
+
+# ---------------------------------------------------------------------------
+# Constants for v2 MENTORED inference (mcillece_roles source)
+# ---------------------------------------------------------------------------
+
+# Role abbreviations that qualify a coach to be a mentor (COORDINATOR tier).
+# Mirrors expand_roles._COORDINATOR_ABBRS.
+_MENTOR_ABBRS: frozenset[str] = frozenset({"HC", "AC", "OC", "DC", "PG", "PD", "RG", "RD"})
+
+# Priority for picking the "best" coordinator role label when a coach held
+# multiple coordinator roles during the overlap window.  HC is always best.
+_MENTOR_ROLE_PRIORITY: dict[str, int] = {
+    "HC": 4,
+    "AC": 3,
+    "OC": 2,
+    "DC": 2,
+    "PG": 1,
+    "PD": 1,
+    "RG": 1,
+    "RD": 1,
 }
 
 
@@ -230,6 +252,241 @@ def infer_mentored_pairs_mcillece(
         )
         for mentor, mentee in seen
     ]
+
+
+# ---------------------------------------------------------------------------
+# McIllece v2 inference — role-tier aware, 2+ consecutive years
+# ---------------------------------------------------------------------------
+
+
+def fetch_coached_at_mcillece_roles(driver: Driver) -> list[dict[str, Any]]:
+    """Query Neo4j for every COACHED_AT edge with source='mcillece_roles'.
+
+    Returns one dict per (coach, team, year, role) combination with keys:
+    ``coach_code``, ``coach_name``, ``team``, ``year``, ``role_abbr``.
+
+    Args:
+        driver: Open Neo4j driver.
+
+    Returns:
+        List of role-season dicts, ordered by team then year.
+    """
+    query = """
+    MATCH (c:Coach)-[r:COACHED_AT]->(t:Team)
+    WHERE r.source = 'mcillece_roles'
+    RETURN c.coach_code AS coach_code,
+           r.coach_name  AS coach_name,
+           t.school      AS team,
+           r.year        AS year,
+           r.role_abbr   AS role_abbr
+    ORDER BY team, year
+    """
+    with driver.session() as session:
+        result = session.run(query)
+        return [rec.data() for rec in result]
+
+
+def _max_consecutive(years: set[int]) -> int:
+    """Return the length of the longest run of consecutive integers in *years*.
+
+    Args:
+        years: Set of integer year values.
+
+    Returns:
+        Length of the longest consecutive run (0 if *years* is empty,
+        1 if no two years are adjacent).
+    """
+    if not years:
+        return 0
+    sorted_years = sorted(years)
+    max_run = cur_run = 1
+    for i in range(1, len(sorted_years)):
+        if sorted_years[i] == sorted_years[i - 1] + 1:
+            cur_run += 1
+            max_run = max(max_run, cur_run)
+        else:
+            cur_run = 1
+    return max_run
+
+
+def _best_mentor_role(abbrs: set[str]) -> str:
+    """Return the highest-priority coordinator role abbreviation from *abbrs*.
+
+    Args:
+        abbrs: Set of coordinator role abbreviations held by a mentor.
+
+    Returns:
+        The abbreviation with the highest ``_MENTOR_ROLE_PRIORITY`` score.
+    """
+    return max(abbrs, key=lambda a: _MENTOR_ROLE_PRIORITY.get(a, 0))
+
+
+def infer_mentored_edges_v2(
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Infer MENTORED edges from mcillece_roles COACHED_AT records.
+
+    Rules applied:
+    - Coach A must hold a COORDINATOR-tier role (HC/OC/DC/AC/PG/PD/RG/RD)
+      in at least one year of the overlap window.
+    - The overlap between A and B at the same team must contain at least
+      **2 consecutive years**.
+    - Coach B can be any role tier.
+    - One edge per unique ``(mentor_code, mentee_code, team)`` triple
+      (different teams produce separate edges).
+
+    Args:
+        records: Flat list of role-season dicts as returned by
+            ``fetch_coached_at_mcillece_roles()``.  Each dict must have
+            keys ``coach_code``, ``coach_name``, ``team``, ``year``,
+            ``role_abbr``.
+
+    Returns:
+        List of edge dicts with keys:
+        ``mentor_code``, ``mentor_name``, ``mentee_code``, ``mentee_name``,
+        ``team``, ``overlap_years``, ``mentor_role_abbr``.
+    """
+    # team → coach_code → year → set(role_abbr)
+    school_roles: dict[str, dict[int, dict[int, set[str]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(set))
+    )
+    code_to_name: dict[int, str] = {}
+
+    for rec in records:
+        school_roles[rec["team"]][rec["coach_code"]][rec["year"]].add(rec["role_abbr"])
+        code_to_name[rec["coach_code"]] = rec["coach_name"]
+
+    seen: set[tuple[int, int, str]] = set()
+    edges: list[dict[str, Any]] = []
+
+    for team, coaches in school_roles.items():
+        coach_list = list(coaches.keys())
+        for a in coach_list:
+            years_a = set(coaches[a])
+            for b in coach_list:
+                if a == b:
+                    continue
+                key = (a, b, team)
+                if key in seen:
+                    continue
+
+                years_b = set(coaches[b])
+                overlap = years_a & years_b
+                if not overlap:
+                    continue
+
+                # A must hold a coordinator role in at least one overlap year
+                a_coord_abbrs: set[str] = {
+                    abbr
+                    for yr in overlap
+                    for abbr in coaches[a][yr]
+                    if abbr in _MENTOR_ABBRS
+                }
+                if not a_coord_abbrs:
+                    continue
+
+                # Need 2+ consecutive shared years
+                if _max_consecutive(overlap) < 2:
+                    continue
+
+                seen.add(key)
+                edges.append(
+                    {
+                        "mentor_code": a,
+                        "mentor_name": code_to_name.get(a, ""),
+                        "mentee_code": b,
+                        "mentee_name": code_to_name.get(b, ""),
+                        "team": team,
+                        "overlap_years": _max_consecutive(overlap),
+                        "mentor_role_abbr": _best_mentor_role(a_coord_abbrs),
+                    }
+                )
+
+    logger.info("Inferred %d projected MENTORED edges (v2, mcillece_roles)", len(edges))
+    return edges
+
+
+def compute_dry_run_stats(
+    edges: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compute summary statistics for a projected MENTORED edge list.
+
+    Args:
+        edges: Edge dicts as returned by ``infer_mentored_edges_v2()``.
+
+    Returns:
+        Dict with keys:
+        - ``total``: int — total projected edge count.
+        - ``by_overlap``: dict mapping bucket label → count.
+          Buckets: ``"2yr"``, ``"3yr"``, ``"4yr"``, ``"5yr+"``.
+        - ``by_mentor_role``: dict mapping role_abbr → count.
+        - ``top_mentors``: list of ``((code, name), mentee_count)`` tuples,
+          sorted descending, up to 10 entries.
+        - ``top_mentees``: list of ``((code, name), mentor_count)`` tuples,
+          sorted descending, up to 10 entries.
+    """
+    total = len(edges)
+
+    # Overlap bucket counts
+    overlap_counts: Counter[str] = Counter()
+    for e in edges:
+        yr = e["overlap_years"]
+        bucket = f"{yr}yr" if yr <= 4 else "5yr+"
+        overlap_counts[bucket] += 1
+
+    # Mentor role breakdown
+    role_counts: Counter[str] = Counter(e["mentor_role_abbr"] for e in edges)
+
+    # Unique mentees per mentor (across all teams)
+    mentor_mentees: dict[tuple[int, str], set[int]] = defaultdict(set)
+    mentee_mentors: dict[tuple[int, str], set[int]] = defaultdict(set)
+    for e in edges:
+        mk = (e["mentor_code"], e["mentor_name"])
+        bk = (e["mentee_code"], e["mentee_name"])
+        mentor_mentees[mk].add(e["mentee_code"])
+        mentee_mentors[bk].add(e["mentor_code"])
+
+    top_mentors = sorted(
+        mentor_mentees.items(), key=lambda x: len(x[1]), reverse=True
+    )[:10]
+    top_mentees = sorted(
+        mentee_mentors.items(), key=lambda x: len(x[1]), reverse=True
+    )[:10]
+
+    return {
+        "total": total,
+        "by_overlap": dict(overlap_counts),
+        "by_mentor_role": dict(role_counts),
+        "top_mentors": top_mentors,
+        "top_mentees": top_mentees,
+    }
+
+
+def save_dry_run_csv(edges: list[dict[str, Any]], path: Path) -> None:
+    """Write projected MENTORED edge list to a CSV file.
+
+    Creates parent directories if they do not already exist.  The file is
+    always overwritten so re-runs stay idempotent.
+
+    Args:
+        edges: Edge dicts as returned by ``infer_mentored_edges_v2()``.
+        path: Destination file path.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "mentor_code",
+        "mentor_name",
+        "mentee_code",
+        "mentee_name",
+        "team",
+        "overlap_years",
+        "mentor_role_abbr",
+    ]
+    with open(path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(edges)
+    logger.info("Saved %d projected edges to %s", len(edges), path)
 
 
 # ---------------------------------------------------------------------------
