@@ -18,7 +18,7 @@ Portfolio project — code quality, testing, and documentation matter.
 | Layer | Technology |
 |---|---|
 | Language | Python 3.11+ |
-| Graph DB | Neo4j AuraDB |
+| Graph DB | Neo4j on Railway (migrated from AuraDB free tier 2026-03-22) |
 | LLM | Google Gemini Python SDK (`gemini-2.0-flash`) |
 | Data Source | CFBD API (college football data) + McIllece CFB Coaches Database (CSV/XLSX) |
 | UI | Streamlit |
@@ -40,7 +40,7 @@ ingestion/ → data/raw/ → loader/ → Neo4j → graphrag/ → app/
 
 ```
 CFBD_API_KEY=
-NEO4J_URI=
+NEO4J_URI=          ← points to Railway Neo4j (bolt://centerbeam.proxy.rlwy.net:37477)
 NEO4J_USERNAME=
 NEO4J_PASSWORD=
 GEMINI_API_KEY=
@@ -104,6 +104,9 @@ cfb-graphrag/
 │
 ├── run_mcillece_pipeline.py   ← end-to-end McIllece load: parse → expand roles → MERGE; --dry-run flag
 ├── run_coverage_audit.py      ← CFBD API coverage audit by year 2005-2025 for 4 endpoints
+├── export_auradb.py           ← dumps AuraDB → data/migrations/auradb_export_YYYYMMDD/ (JSON)
+├── import_to_railway.py       ← loads migration dump into Railway Neo4j; idempotent MERGE
+├── verify_railway.py          ← checks node/rel counts + spot-checks against expected values
 │
 ├── agents/                ← Phase 0+ Claude Code agents (scaffolded)
 ├── presets/               ← F2 Cypher+NL query templates (scaffolded)
@@ -139,19 +142,19 @@ cfb-graphrag/
 (:Coach)-[:MENTORED]->(:Coach)
 ```
 
-## Live Graph State (as of Session 3C)
+## Live Graph State (as of Session 3D — Railway Neo4j)
 
-| Node label | Count |
-|---|---|
-| Player | 97,765 |
-| Team | 1,862 |
-| Coach | 4,216 |
-| Conference | 74 |
+| Node label | Count | Notes |
+|---|---|---|
+| Player | 97,765 | |
+| Team | 1,902 | 1,862 unique schools + 40 duplicate non-FBS entries (keyed by CFBD id) |
+| Coach | 6,002 | 1,786 CFBD (first_name/last_name) + 4,216 McIllece (coach_code) |
+| Conference | 74 | |
 
 | Relationship type | Count | Source |
 |---|---|---|
 | PLAYED_FOR | 231,540 | CFBD |
-| COACHED_AT | 75,457 | CFBD (12,414) + McIllece season-level (26,368) + McIllece per-role (36,675→39,031 after team map fix) |
+| COACHED_AT | 77,813 | CFBD (12,414) + McIllece season-level (26,368) + McIllece per-role (39,031) |
 | PLAYED | 26,918 | CFBD |
 | IN_CONFERENCE | 702 | CFBD |
 | MENTORED | 163 | Inferred from CFBD overlaps |
@@ -312,4 +315,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 3D — MENTORED edge dry run built. infer_mentored_edges_v2() (COORDINATOR mentor, 2+ consecutive yrs, one edge per (A,B,team)), fetch_coached_at_mcillece_roles(), compute_dry_run_stats(), save_dry_run_csv() added to build_mentored_edges.py. run_mentored_dry_run.py script at root saves results to data/audits/mentored_dry_run.csv. 185/185 tests pass.*
+*Last updated: Session 3D (Task 2) — Railway Neo4j migration complete. AuraDB free tier decommissioned. export_auradb.py, import_to_railway.py, verify_railway.py added at project root. docs/railway_setup.md documents the migration procedure. NEO4J_URI now points to Railway (bolt://centerbeam.proxy.rlwy.net:37477). 216/216 tests pass.*
