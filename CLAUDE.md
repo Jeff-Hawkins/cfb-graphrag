@@ -315,4 +315,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 3D (Task 2) — Railway Neo4j migration complete. AuraDB free tier decommissioned. export_auradb.py, import_to_railway.py, verify_railway.py added at project root. docs/railway_setup.md documents the migration procedure. NEO4J_URI now points to Railway (bolt://centerbeam.proxy.rlwy.net:37477). 216/216 tests pass.*
+*Last updated: Session 3D (Task 2) — Railway Neo4j migration complete. AuraDB free tier decommissioned. export_auradb.py, import_to_railway.py, verify_railway.py added at project root. docs/railway_setup.md documents the migration procedure. NEO4J_URI now points to Railway (bolt://centerbeam.proxy.rlwy.net:37477). data/mcillece/ and data/migrations/ added to .gitignore. 216/216 tests pass.*

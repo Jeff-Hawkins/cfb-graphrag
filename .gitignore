@@ -3,6 +3,8 @@
 
 # Raw data — never commit
 data/raw/
+data/mcillece/
+data/migrations/
 
 # Python
 __pycache__/
