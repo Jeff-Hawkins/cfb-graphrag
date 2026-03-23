@@ -1,44 +1,166 @@
-"""Orchestrates the full GraphRAG pipeline: classify → extract → traverse → generate."""
+"""Orchestrates the full F4 GraphRAG pipeline: classify → plan → execute → synthesize.
+
+Pipeline position::
+
+    NL query → retriever.py
+                ↓
+            classifier.py   (intent bucket + confidence)
+                ↓
+            planner.py      (entity extraction + sub-query plan)
+                ↓
+            executor.py     (Neo4j traversals, topo-sorted)
+                ↓
+            retry.py        (ReduceDepth / LimitRoleFilter / FallbackTraversal)
+                ↓
+            synthesizer.py  (structured answer + F1 Explain My Result rows)
+
+Typical usage::
+
+    from graphrag.retriever import retrieve_with_graphrag
+
+    result = retrieve_with_graphrag(question, driver=driver)
+    print(result.response.answer)
+    for row in result.response.result_rows:
+        print(row.display_name, "—", row.explanation)
+"""
 
 import logging
 import os
+from dataclasses import dataclass
 
 from google import genai
-from google.genai import types
 from neo4j import Driver
 
 from graphrag.classifier import classify_intent
-from graphrag.entity_extractor import extract_entities, resolve_coach_entity
-from graphrag.graph_traversal import (
-    get_coach_tree,
-    get_coaches_in_conferences,
-    get_coaching_tree,
-    shortest_path_between_coaches,
+from graphrag.planner import EntityBundle, SubQueryPlan, build_plan
+from graphrag.retry import execute_with_retry
+from graphrag.synthesizer import (
+    SynthesisInput,
+    SynthesizedResponse,
+    synthesize_response,
 )
 
 logger = logging.getLogger(__name__)
 
-_ANSWER_SYSTEM = """You are a college football analyst. You will be given:
-1. A user question
-2. Structured data retrieved from a knowledge graph
 
-Use the graph data to answer the question accurately and concisely.
-If the data is insufficient, say so clearly."""
+# ---------------------------------------------------------------------------
+# Return type
+# ---------------------------------------------------------------------------
 
 
-def _format_provenance(result: dict) -> str:
-    """Format an F1 provenance string for a single coaching tree result.
+@dataclass
+class GraphRAGQueryResult:
+    """Return type of :func:`retrieve_with_graphrag`.
+
+    Bundles the structured response with metadata the UI needs to make
+    smart rendering decisions (e.g. which visualization to show).
+
+    Attributes:
+        response: Full :class:`~graphrag.synthesizer.SynthesizedResponse`
+            with the primary answer, per-coach result rows (each carrying an
+            F1 *Explain My Result* string), partial flag, and warnings.
+        intent: Classified intent bucket (e.g. ``"TREE_QUERY"``).
+        root_name: First coach entity from the plan, or ``""`` when absent.
+            Useful in the UI as the label for the root node of a tree
+            visualisation.
+    """
+
+    response: SynthesizedResponse
+    intent: str
+    root_name: str
+
+
+# ---------------------------------------------------------------------------
+# Primary pipeline entry point
+# ---------------------------------------------------------------------------
+
+
+def retrieve_with_graphrag(
+    question: str,
+    driver: Driver,
+    client: genai.Client | None = None,
+) -> GraphRAGQueryResult:
+    """Execute the full F4 GraphRAG pipeline for a natural language question.
+
+    Steps:
+
+    1. :func:`~graphrag.classifier.classify_intent` — intent bucket + confidence.
+    2. :func:`~graphrag.planner.build_plan` — entity extraction + sub-query plan.
+    3. :func:`~graphrag.retry.execute_with_retry` — run plan with retry strategies.
+    4. :func:`~graphrag.synthesizer.synthesize_response` — structured answer + F1
+       *Explain My Result* strings.
+
+    Degrades gracefully on classification or planning failures — returns a
+    partial result with warnings rather than raising.
 
     Args:
-        result: Dict from :func:`get_coaching_tree` with keys ``name``,
-            ``coach_code``, ``depth``, ``path_coaches``.
+        question: Natural language question about college football.
+        driver: Open Neo4j driver connected to the loaded graph.
+        client: Optional ``genai.Client``.  If omitted a new client is created
+            using ``GEMINI_API_KEY`` from the environment.
 
     Returns:
-        Human-readable provenance string.
+        :class:`GraphRAGQueryResult` bundling the structured
+        :class:`~graphrag.synthesizer.SynthesizedResponse`, classified intent,
+        and root coach name for UI rendering decisions.
     """
-    path = " → ".join(result.get("path_coaches") or [])
-    depth = result.get("depth", "?")
-    return f"Included because: coaching lineage depth {depth} ({path})"
+    if client is None:
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+    # 1. Classify intent.
+    try:
+        classification = classify_intent(question, client=client)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("classify_intent failed: %s", exc)
+        classification = {"intent": "TREE_QUERY", "confidence": 0.0}
+
+    intent: str = classification["intent"]
+    confidence: float = float(classification["confidence"])
+
+    # 2. Build sub-query plan.
+    try:
+        plan: SubQueryPlan = build_plan(
+            question=question,
+            intent=intent,
+            confidence=confidence,
+            client=client,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("build_plan failed: %s", exc)
+        plan = SubQueryPlan(
+            intent=intent,
+            confidence=confidence,
+            question=question,
+            entities=EntityBundle(),
+            sub_queries=[],
+            ready=False,
+            warnings=[f"Planning failed: {exc}"],
+        )
+
+    root_name: str = plan.entities.coaches[0] if plan.entities.coaches else ""
+
+    # 3. Execute with retry.
+    retry_outcome = execute_with_retry(plan, driver=driver)
+
+    # 4. Synthesize structured response.
+    response = synthesize_response(
+        SynthesisInput(
+            plan=plan,
+            execution_result=retry_outcome.final_result,
+            retry_outcome=retry_outcome,
+        )
+    )
+
+    return GraphRAGQueryResult(
+        response=response,
+        intent=intent,
+        root_name=root_name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible thin wrapper
+# ---------------------------------------------------------------------------
 
 
 def answer_question(
@@ -46,114 +168,21 @@ def answer_question(
     driver: Driver,
     client: genai.Client | None = None,
 ) -> str:
-    """Answer a natural language question using GraphRAG.
+    """Answer a natural language question using the F4 GraphRAG pipeline.
 
-    Pipeline:
-    1. Classify intent via classifier.py (TREE_QUERY | PERFORMANCE_COMPARE | etc.).
-    2. Extract entities from the question via Gemini.
-    3. Resolve coach entities to CFBD + McIllece node IDs.
-    4. Run targeted Cypher traversals based on intent and entity types.
-    5. Format results with F1 provenance strings.
-    6. Pass graph context to Gemini for final answer generation.
+    Thin wrapper over :func:`retrieve_with_graphrag` that returns only the
+    primary answer string.  Use :func:`retrieve_with_graphrag` directly when
+    you need structured result rows and F1 *Explain My Result* provenance.
 
     Args:
         question: Natural language question about college football.
         driver: Open Neo4j driver connected to the loaded graph.
-        client: Optional ``genai.Client`` for answer generation.
-            If omitted a new client is created using ``GEMINI_API_KEY`` from env.
+        client: Optional ``genai.Client``.  If omitted a new client is
+            created using ``GEMINI_API_KEY`` from the environment.
 
     Returns:
-        A natural language answer string generated by Gemini.
+        A natural language answer string.
     """
-    if client is None:
-        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
-    # 1. Classify intent
-    classification = classify_intent(question, client=client)
-    intent = classification["intent"]
-    logger.info("Classified intent: %s (confidence=%.2f)", intent, classification["confidence"])
-
-    # 2. Entity extraction uses the same client
-    entities = extract_entities(question, client=client)
-    logger.info("Extracted entities: %s", entities)
-
-    graph_context: list[str] = []
-
-    # 3. Route to the appropriate traversal based on intent
-    if intent == "TREE_QUERY" and entities["coaches"]:
-        coach_name = entities["coaches"][0]
-        resolved = resolve_coach_entity(coach_name, driver)
-        mc_code = resolved["mc_coach_code"]
-
-        if mc_code is not None:
-            # Use McIllece coaching tree (MENTORED edges)
-            tree_results = get_coaching_tree(
-                coach_code=mc_code,
-                role_filter="HC",
-                max_depth=4,
-                driver=driver,
-            )
-            provenance_lines = [_format_provenance(r) for r in tree_results]
-            names = [r["name"] for r in tree_results]
-            graph_context.append(
-                f"Coaching tree (HC mentees) for {coach_name}:\n"
-                + "\n".join(f"  {n}  |  {p}" for n, p in zip(names, provenance_lines))
-            )
-        else:
-            # Fall back to CFBD-based traversal
-            tree = get_coach_tree(driver, coach_name)
-            if tree:
-                graph_context.append(f"Coaching tree for {coach_name}:\n{tree}")
-
-    elif intent in ("PERFORMANCE_COMPARE", "PIPELINE_QUERY", "CHANGE_IMPACT"):
-        # General coach / conference traversals
-        for coach_name in entities["coaches"]:
-            tree = get_coach_tree(driver, coach_name)
-            if tree:
-                graph_context.append(f"Coaching data for {coach_name}:\n{tree}")
-
-        if entities["teams"]:
-            coaches = get_coaches_in_conferences(driver, entities["teams"])
-            if coaches:
-                graph_context.append(f"Coaches across {entities['teams']}:\n{coaches}")
-
-    elif intent == "SIMILARITY" and len(entities["coaches"]) == 2:
-        path = shortest_path_between_coaches(
-            driver, entities["coaches"][0], entities["coaches"][1]
-        )
-        if path:
-            graph_context.append(
-                f"Path between {entities['coaches'][0]} and {entities['coaches'][1]}:\n{path}"
-            )
-
-    else:
-        # Fallback: try all traversals
-        for coach_name in entities["coaches"]:
-            tree = get_coach_tree(driver, coach_name)
-            if tree:
-                graph_context.append(f"Coaching tree for {coach_name}:\n{tree}")
-
-        if len(entities["teams"]) >= 2:
-            coaches = get_coaches_in_conferences(driver, entities["teams"])
-            if coaches:
-                graph_context.append(f"Coaches across {entities['teams']}:\n{coaches}")
-
-        if len(entities["coaches"]) == 2:
-            path = shortest_path_between_coaches(
-                driver, entities["coaches"][0], entities["coaches"][1]
-            )
-            if path:
-                graph_context.append(
-                    f"Path between {entities['coaches'][0]} and {entities['coaches'][1]}:\n{path}"
-                )
-
-    context_str = (
-        "\n\n".join(graph_context) if graph_context else "No relevant graph data found."
-    )
-
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=f"Question: {question}\n\nGraph data:\n{context_str}",
-        config=types.GenerateContentConfig(system_instruction=_ANSWER_SYSTEM),
-    )
-    return response.text
+    return retrieve_with_graphrag(
+        question, driver=driver, client=client
+    ).response.answer
