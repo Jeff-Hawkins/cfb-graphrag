@@ -168,7 +168,7 @@ def infer_mentored_pairs_mcillece(
     1. Group stints by ``team`` (school name).
     2. For each school, build a map of ``coach_code`` → ``{year: [roles]}``.
     3. For every unique pair of coaches at that school, check whether their
-       year-sets intersect (≥ 1 shared season).
+       year-sets intersect (≥ 2 shared seasons).
     4. If they overlap, determine the mentor:
        a. Compute each coach's *best* role priority across the overlapping
           seasons (HC=3, OC=DC=2, everything else=0).
@@ -210,7 +210,7 @@ def infer_mentored_pairs_mcillece(
                 years2 = set(coach_data[c2])
 
                 overlap_years = years1 & years2
-                if not overlap_years:
+                if len(overlap_years) < 2:
                     continue
 
                 # Best role priority for each coach across the overlap

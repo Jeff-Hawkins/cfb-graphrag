@@ -157,8 +157,8 @@ cfb-graphrag/
 | COACHED_AT | 77,813 | CFBD (12,414) + McIllece season-level (26,368) + McIllece per-role (39,031) |
 | PLAYED | 26,918 | CFBD |
 | IN_CONFERENCE | 702 | CFBD |
-| MENTORED | 163 | Inferred from CFBD overlaps |
-| **Total** | **337,136** | |
+| MENTORED | 26,244 | 163 CFBD overlaps + 26,081 McIllece staff overlap (2+ season filter) |
+| **Total** | **363,217** | |
 
 Data range: rosters and games 2015–2025. McIllece staff data 2005–2025 (full FBS). Coaches span all years recorded by CFBD and McIllece.
 
@@ -174,7 +174,7 @@ Data range: rosters and games 2015–2025. McIllece staff data 2005–2025 (full
 
 **MENTORED inference note:** Two inference methods exist:
 - **CFBD-based (163 edges):** Inferred from head-coaching transition overlaps only. Famous staff hierarchies (Saban → Smart, etc.) are not captured.
-- **McIllece-based (`infer_mentored_pairs_mcillece()`):** Uses actual staff records with role priority (HC > OC/DC > position coach). Full FBS 2005–2025 dataset is now loaded — ready to rebuild MENTORED edges from McIllece data.
+- **McIllece-based (`infer_mentored_pairs_mcillece()`):** Uses actual staff records with role priority (HC > OC/DC > position coach) and **2+ season overlap** requirement. Full FBS 2005–2025 dataset loaded → 26,081 new pairs MERGEd into Railway Neo4j (Session 3D Task 4).
 
 McIllece coaches are keyed by `coach_code`. CFBD coaches (matched by `first_name + last_name`) are untouched.
 
@@ -315,4 +315,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 3D (Task 2) — Railway Neo4j migration complete. AuraDB free tier decommissioned. export_auradb.py, import_to_railway.py, verify_railway.py added at project root. docs/railway_setup.md documents the migration procedure. NEO4J_URI now points to Railway Neo4j (connection string in .env only). data/mcillece/ and data/migrations/ added to .gitignore. 216/216 tests pass.*
+*Last updated: Session 3D (Task 8) — MENTORED edges loaded from McIllece staff overlap data. infer_mentored_pairs_mcillece() updated to require 2+ season overlap. load_mentored_edges_mcillece() updated with 1,000-row batching and progress output. 26,081 McIllece MENTORED pairs MERGEd into Railway Neo4j (total 26,244 including 163 CFBD-based). Saban coaching tree (depth 1–3): 1,671 nodes, 11,110 edges, saved to data/visuals/saban_tree.html. render_saban_tree.py added at project root. 4 new tests added; 220/220 pass.*

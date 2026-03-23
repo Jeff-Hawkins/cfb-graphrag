@@ -230,11 +230,13 @@ class TestInferMentoredPairsMcillece:
     def test_hc_beats_position_coach(self):
         """HC role trumps a position coach regardless of start year."""
         staff = self._make_staff([
-            # WR coach arrived in 2018; HC arrived in 2020 — they overlap in 2020.
+            # WR coach arrived in 2018; HC arrived in 2020 — they overlap in 2020–2021.
             # Role priority (HC=3 > WR=0) should make HC the mentor despite later start.
             (200, "Wide Receivers Coach", "State U", 2018, ["WR"]),
             (200, "Wide Receivers Coach", "State U", 2020, ["WR"]),
+            (200, "Wide Receivers Coach", "State U", 2021, ["WR"]),
             (100, "Head Coach",           "State U", 2020, ["HC"]),
+            (100, "Head Coach",           "State U", 2021, ["HC"]),
         ])
         pairs = infer_mentored_pairs_mcillece(staff)
         assert len(pairs) == 1
@@ -245,7 +247,9 @@ class TestInferMentoredPairsMcillece:
         """OC role is senior to a plain position coach."""
         staff = self._make_staff([
             (101, "OC Coach", "State U", 2020, ["OC", "QB"]),
+            (101, "OC Coach", "State U", 2021, ["OC", "QB"]),
             (201, "LB Coach", "State U", 2020, ["LB"]),
+            (201, "LB Coach", "State U", 2021, ["LB"]),
         ])
         pairs = infer_mentored_pairs_mcillece(staff)
         assert len(pairs) == 1
@@ -255,11 +259,13 @@ class TestInferMentoredPairsMcillece:
     def test_dc_beats_position_coach(self):
         """DC role is senior to a plain position coach despite later start year."""
         staff = self._make_staff([
-            # DL coach arrived 2019; DC arrived 2020 — they overlap in 2020.
+            # DL coach arrived 2019; DC arrived 2020 — they overlap in 2020–2021.
             # Role priority (DC=2 > DL=0) should make DC the mentor.
             (102, "Pos Coach", "State U", 2019, ["DL"]),
             (102, "Pos Coach", "State U", 2020, ["DL"]),
+            (102, "Pos Coach", "State U", 2021, ["DL"]),
             (202, "DC Coach",  "State U", 2020, ["DC"]),
+            (202, "DC Coach",  "State U", 2021, ["DC"]),
         ])
         pairs = infer_mentored_pairs_mcillece(staff)
         assert len(pairs) == 1
@@ -284,12 +290,40 @@ class TestInferMentoredPairsMcillece:
         staff = self._make_staff([
             (104, "First OC",  "State U", 2010, ["OC"]),
             (104, "First OC",  "State U", 2012, ["OC"]),
+            (104, "First OC",  "State U", 2013, ["OC"]),
             (204, "Second OC", "State U", 2012, ["OC"]),
+            (204, "Second OC", "State U", 2013, ["OC"]),
         ])
         pairs = infer_mentored_pairs_mcillece(staff)
         assert len(pairs) == 1
         mentor, mentee = pairs[0]
         assert mentor["coach_code"] == 104
+
+    def test_single_season_overlap_excluded(self):
+        """Two coaches sharing only 1 season → no pair (requires 2+ overlap)."""
+        staff = self._make_staff([
+            (108, "HC Coach", "State U", 2018, ["HC"]),
+            (108, "HC Coach", "State U", 2019, ["HC"]),
+            (208, "WR Coach", "State U", 2019, ["WR"]),
+        ])
+        # overlap = {2019} — only 1 shared season → no pair
+        pairs = infer_mentored_pairs_mcillece(staff)
+        assert pairs == []
+
+    def test_two_season_overlap_creates_pair(self):
+        """Two coaches sharing 2 seasons → exactly 1 pair (meets 2+ threshold)."""
+        staff = self._make_staff([
+            (109, "HC Coach", "State U", 2018, ["HC"]),
+            (109, "HC Coach", "State U", 2019, ["HC"]),
+            (209, "WR Coach", "State U", 2019, ["WR"]),
+            (209, "WR Coach", "State U", 2020, ["WR"]),
+            (109, "HC Coach", "State U", 2020, ["HC"]),
+        ])
+        # overlap = {2019, 2020} — 2 shared seasons → pair created
+        pairs = infer_mentored_pairs_mcillece(staff)
+        assert len(pairs) == 1
+        mentor, mentee = pairs[0]
+        assert mentor["coach_code"] == 109  # HC wins by role priority
 
     def test_no_overlap_returns_empty(self):
         """Coaches at the same school in non-overlapping years → no pairs."""
@@ -304,9 +338,13 @@ class TestInferMentoredPairsMcillece:
         """Same pair at two schools produces only one MENTORED edge."""
         staff = self._make_staff([
             (106, "HC Guy",   "School A", 2015, ["HC"]),
+            (106, "HC Guy",   "School A", 2016, ["HC"]),
             (206, "WR Guy",   "School A", 2015, ["WR"]),
+            (206, "WR Guy",   "School A", 2016, ["WR"]),
             (106, "HC Guy",   "School B", 2018, ["HC"]),
+            (106, "HC Guy",   "School B", 2019, ["HC"]),
             (206, "WR Guy",   "School B", 2018, ["WR"]),
+            (206, "WR Guy",   "School B", 2019, ["WR"]),
         ])
         pairs = infer_mentored_pairs_mcillece(staff)
         # Both schools give same direction (HC > WR), dedup → 1 pair
@@ -316,7 +354,9 @@ class TestInferMentoredPairsMcillece:
         """Each pair dict has both coach_code and coach_name."""
         staff = self._make_staff([
             (107, "The Mentor", "U", 2020, ["HC"]),
+            (107, "The Mentor", "U", 2021, ["HC"]),
             (207, "The Mentee", "U", 2020, ["RB"]),
+            (207, "The Mentee", "U", 2021, ["RB"]),
         ])
         pairs = infer_mentored_pairs_mcillece(staff)
         assert len(pairs) == 1
@@ -327,8 +367,15 @@ class TestInferMentoredPairsMcillece:
         assert mentee["coach_name"] == "The Mentee"
 
     def test_alabama_2020_hc_is_mentor_for_all(self, ala_2020_staff):
-        """Nick Saban (HC, code 1457) should be the mentor in all pairs he appears in."""
-        pairs = infer_mentored_pairs_mcillece(ala_2020_staff)
+        """Nick Saban (HC, code 1457) should be the mentor in all pairs he appears in.
+
+        Uses a two-year dataset (2020 + 2021 duplicates) so every pair satisfies
+        the 2+ season overlap requirement.
+        """
+        import copy
+        ala_2021_staff = [dict(r, year=2021) for r in copy.deepcopy(ala_2020_staff)]
+        two_year_staff = ala_2020_staff + ala_2021_staff
+        pairs = infer_mentored_pairs_mcillece(two_year_staff)
         saban_as_mentor = [p for p in pairs if p[0]["coach_code"] == 1457]
         saban_as_mentee = [p for p in pairs if p[1]["coach_code"] == 1457]
         assert len(saban_as_mentor) > 0
@@ -399,3 +446,40 @@ class TestLoadMentoredEdgesMcillece:
         load_mentored_edges_mcillece(driver, pairs)
         captured = capsys.readouterr()
         assert "42" in captured.out
+
+    def test_large_batch_splits_into_chunks(self, capsys):
+        """More than 1,000 pairs are sent in multiple batches of ≤1,000."""
+        driver = _make_count_driver(total=1500)
+        # Build 1,500 fake pairs
+        pairs = [
+            ({"coach_code": i, "coach_name": f"Mentor {i}"},
+             {"coach_code": i + 10000, "coach_name": f"Mentee {i}"})
+            for i in range(1500)
+        ]
+        load_mentored_edges_mcillece(driver, pairs)
+        session = driver.session().__enter__()
+        # Count how many times session.run was called with UNWIND (batch calls)
+        unwind_calls = [
+            c for c in session.run.call_args_list
+            if c[0] and "UNWIND" in c[0][0]
+        ]
+        # 1500 pairs / 1000 per batch = 2 UNWIND calls
+        assert len(unwind_calls) == 2
+        # Each batch has at most 1,000 rows
+        for call in unwind_calls:
+            rows = call[1]["rows"]
+            assert len(rows) <= 1000
+
+    def test_progress_printed_per_batch(self, capsys):
+        """Progress line is printed after each batch."""
+        driver = _make_count_driver(total=2500)
+        pairs = [
+            ({"coach_code": i, "coach_name": f"Mentor {i}"},
+             {"coach_code": i + 10000, "coach_name": f"Mentee {i}"})
+            for i in range(2500)
+        ]
+        load_mentored_edges_mcillece(driver, pairs)
+        captured = capsys.readouterr()
+        # 2500 / 1000 = 3 batches → 3 progress lines
+        progress_lines = [l for l in captured.out.splitlines() if "MENTORED pairs" in l and "/" in l]
+        assert len(progress_lines) == 3

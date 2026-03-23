@@ -133,8 +133,14 @@ def load_mentored_edges_mcillece(
         for mentor, mentee in pairs
     ]
 
+    batch_size = 1_000
+    loaded = 0
     with driver.session() as session:
-        session.run(merge_query, rows=rows)
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start : start + batch_size]
+            session.run(merge_query, rows=batch)
+            loaded += len(batch)
+            print(f"  Merged {loaded:,} / {len(rows):,} MENTORED pairs …")
 
     logger.info("Merged %d McIllece MENTORED pairs", len(pairs))
 
