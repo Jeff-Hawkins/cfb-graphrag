@@ -228,7 +228,7 @@ def main() -> None:
     # ── Saban spot-check ─────────────────────────────────────────────────
     print("\n=== Spot-check: Nick Saban COACHED_AT ===")
     for row in results["saban"][:10]:
-        print(f"  {row['name']:<25} {row['school']:<20} {row.get('year','')}  {row.get('role','')}")
+        print(f"  {row.get('name') or '':<25} {row.get('school') or '':<20} {row.get('year') or ''}  {row.get('role') or ''}")
     if not results["saban"]:
         print("  [FAIL] No records found!")
 
@@ -236,9 +236,9 @@ def main() -> None:
     print("\n=== Spot-check: Alabama 2015 staff ===")
     for row in results["alabama_2015"][:10]:
         print(
-            f"  {row.get('name',''):<30} "
-            f"role={row.get('role',''):<25} "
-            f"tier={row.get('role_tier','')}"
+            f"  {row.get('name') or '':<30} "
+            f"role={row.get('role') or '':<25} "
+            f"tier={row.get('role_tier') or ''}"
         )
     if not results["alabama_2015"]:
         print("  [WARN] No per-role records found (mcillece_roles may not be loaded yet)")
