@@ -11,9 +11,9 @@ Requires in .env:
     RAILWAY_NEO4J_USER
     RAILWAY_NEO4J_PASSWORD
 
-Expected counts (from AuraDB as of Session 3D):
-    Nodes:  Player=97,765  Team=1,862  Coach=4,216  Conference=74
-    Rels:   PLAYED_FOR=231,540  COACHED_AT=75,457  PLAYED=26,918
+Expected counts (from AuraDB export 2026-03-22):
+    Nodes:  Player=97,765  Team=1,902  Coach=6,002  Conference=74
+    Rels:   PLAYED_FOR=231,540  COACHED_AT=77,813  PLAYED=26,918
             IN_CONFERENCE=702   MENTORED=163
     Total:  337,136 relationships
 """
@@ -21,6 +21,7 @@ Expected counts (from AuraDB as of Session 3D):
 from __future__ import annotations
 
 import logging
+from typing import Any
 import os
 import sys
 
@@ -37,14 +38,14 @@ logger = logging.getLogger(__name__)
 
 EXPECTED_NODES: dict[str, int] = {
     "Player":     97_765,
-    "Team":        1_862,
-    "Coach":       4_216,
+    "Team":        1_902,  # 1,862 FBS/FCS unique schools + 40 duplicate non-FBS entries
+    "Coach":       6_002,  # 4,216 CFBD + 1,786 McIllece-only coaches
     "Conference":     74,
 }
 
 EXPECTED_RELS: dict[str, int] = {
     "PLAYED_FOR":    231_540,
-    "COACHED_AT":     75_457,
+    "COACHED_AT":     77_813,  # 12,414 CFBD + 26,368 mcillece + 39,031 mcillece_roles
     "PLAYED":         26_918,
     "IN_CONFERENCE":     702,
     "MENTORED":          163,
@@ -139,7 +140,7 @@ def spot_check_alabama_2015(driver: Driver) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def run_verification(driver: Driver) -> dict[str, Any]:  # type: ignore[name-defined]
+def run_verification(driver: Driver) -> dict[str, Any]:
     """Run all verification checks and return a results dict.
 
     Args:
@@ -149,8 +150,6 @@ def run_verification(driver: Driver) -> dict[str, Any]:  # type: ignore[name-def
         Dict with keys ``nodes``, ``rels``, ``saban``, ``alabama_2015``,
         ``passed`` (bool), ``failures`` (list of str).
     """
-    from typing import Any
-
     node_counts = check_node_counts(driver)
     rel_counts = check_rel_counts(driver)
     saban = spot_check_saban(driver)

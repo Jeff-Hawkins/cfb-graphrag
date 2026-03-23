@@ -87,25 +87,53 @@ def _run_batched(
 
 
 def create_constraints(driver: Driver) -> None:
-    """Create uniqueness constraints on Railway Neo4j to mirror AuraDB.
+    """Create uniqueness constraints on Railway Neo4j Community Edition.
+
+    Only ``IS UNIQUE`` (single-property) constraints are used — Neo4j
+    Community Edition does not support Node Key (multi-property unique)
+    constraints.  CFBD coaches are identified by ``(first_name, last_name)``
+    which cannot have a Community Edition uniqueness constraint; MERGE on
+    that pair still works correctly via a full-scan, just without an index.
+    McIllece coaches are keyed by ``coach_code`` which gets an IS UNIQUE
+    constraint for fast idempotent MERGE.
+
+    Note: ``Team.school`` is intentionally NOT constrained — 35 non-FBS
+    school names appear under multiple CFBD team IDs (different division
+    entries).  AuraDB never had a school uniqueness constraint either.
+    Any leftover ``Team.school`` constraint from a prior script version
+    is detected and dropped automatically.
 
     Args:
         driver: Open Neo4j driver pointed at Railway.
     """
+    # ── Drop any leftover constraints from previous script versions ────────
+    # Earlier versions created a Team.school IS UNIQUE constraint, which
+    # conflicts with duplicate non-FBS schools in the export data.
+    with driver.session() as session:
+        rows = session.run(
+            "SHOW CONSTRAINTS YIELD name, labelsOrTypes, properties, type"
+        ).data()
+    bad = [
+        r["name"] for r in rows
+        if r.get("labelsOrTypes") == ["Team"]
+        and r.get("properties") == ["school"]
+        and r.get("type") == "UNIQUENESS"
+    ]
+    for name in bad:
+        with driver.session() as session:
+            session.run(f"DROP CONSTRAINT `{name}`")
+        logger.info("Dropped leftover Team.school constraint: %s", name)
+
+    # ── Create the correct Community Edition constraints ───────────────────
     constraints = [
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Team)       REQUIRE n.id         IS UNIQUE",
-        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Team)       REQUIRE n.school      IS UNIQUE",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Player)     REQUIRE n.id          IS UNIQUE",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Conference) REQUIRE n.name        IS UNIQUE",
-        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Coach)      REQUIRE (n.first_name, n.last_name) IS NODE KEY",
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (n:Coach)      REQUIRE n.coach_code  IS UNIQUE",
     ]
     with driver.session() as session:
         for cypher in constraints:
-            try:
-                session.run(cypher)
-            except Exception as exc:  # pylint: disable=broad-except
-                # NODE KEY may require Enterprise — warn and continue
-                logger.warning("Constraint skipped (%s): %s", exc.__class__.__name__, exc)
+            session.run(cypher)
     logger.info("Constraints created (or already exist)")
 
 
