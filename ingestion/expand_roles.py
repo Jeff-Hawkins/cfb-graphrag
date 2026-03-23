@@ -85,6 +85,19 @@ _ABBR_NORMALIZATIONS: dict[str, str] = {
     "RC?": "RC",
 }
 
+# McIllece team name → Neo4j Team.school (confirmed against live graph)
+TEAM_NAME_MAP: dict[str, str] = {
+    "Miami FL":          "Miami",
+    "Miami OH":          "Miami (OH)",
+    "MTSU":              "Middle Tennessee",
+    "ULM":               "Louisiana",
+    "UCONN":             "UConn",
+    "San Jose State":    "San José State",
+    "FIU":               "Florida International",
+    "UMASS":             "Massachusetts",
+    "Sam Houston State": "Sam Houston",
+}
+
 
 def _classify_tier(abbr: str) -> str:
     """Return the tier string for a role abbreviation.
@@ -139,6 +152,7 @@ def expand_to_role_records(
     unmapped: set[str] = set()
 
     for rec in staff:
+        team = TEAM_NAME_MAP.get(rec["team"], rec["team"])
         for raw_abbr in rec["roles"]:
             abbr = _ABBR_NORMALIZATIONS.get(raw_abbr, raw_abbr)
             full_name = ROLE_LEGEND.get(abbr)
@@ -157,7 +171,7 @@ def expand_to_role_records(
                     "coach_code": rec["coach_code"],
                     "team_code": rec["team_code"],
                     "year": rec["year"],
-                    "team": rec["team"],
+                    "team": team,  # canonical (Neo4j-matched) school name
                     "coach_name": rec["coach_name"],
                     "role_abbr": abbr,  # canonical (normalized) abbreviation
                     "role": full_name,

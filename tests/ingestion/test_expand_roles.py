@@ -5,6 +5,7 @@ import pytest
 from ingestion.expand_roles import (
     COORDINATOR_FLAG_ABBRS,
     ROLE_LEGEND,
+    TEAM_NAME_MAP,
     TIER_COORDINATOR,
     TIER_POSITION_COACH,
     TIER_SUPPORT,
@@ -125,6 +126,49 @@ class TestRoleLegend:
 
     def test_dc_maps_to_defensive_coordinator(self):
         assert ROLE_LEGEND["DC"] == "Defensive Coordinator"
+
+
+# ---------------------------------------------------------------------------
+# TEAM_NAME_MAP
+# ---------------------------------------------------------------------------
+
+
+class TestTeamNameMap:
+    def test_all_nine_entries_present(self):
+        expected = {
+            "Miami FL", "Miami OH", "MTSU", "ULM", "UCONN",
+            "San Jose State", "FIU", "UMASS", "Sam Houston State",
+        }
+        assert expected == set(TEAM_NAME_MAP.keys())
+
+    def test_miami_fl_maps_to_miami(self):
+        assert TEAM_NAME_MAP["Miami FL"] == "Miami"
+
+    def test_miami_oh_maps_to_miami_oh(self):
+        assert TEAM_NAME_MAP["Miami OH"] == "Miami (OH)"
+
+    def test_san_jose_state_maps_with_accent(self):
+        assert TEAM_NAME_MAP["San Jose State"] == "San José State"
+
+    def test_team_name_normalised_in_output(self):
+        """expand_to_role_records must apply TEAM_NAME_MAP to the team field."""
+        staff = [{"coach_code": 1, "team_code": 50, "year": 2015,
+                  "team": "MTSU", "coach_name": "Coach", "roles": ["HC"]}]
+        records, _ = expand_to_role_records(staff)
+        assert records[0]["team"] == "Middle Tennessee"
+
+    def test_unmapped_team_passthrough(self):
+        """Teams not in TEAM_NAME_MAP are written unchanged."""
+        staff = [{"coach_code": 1, "team_code": 8, "year": 2020,
+                  "team": "Alabama", "coach_name": "Nick Saban", "roles": ["HC"]}]
+        records, _ = expand_to_role_records(staff)
+        assert records[0]["team"] == "Alabama"
+
+    def test_fiu_maps_to_florida_international(self):
+        assert TEAM_NAME_MAP["FIU"] == "Florida International"
+
+    def test_uconn_maps_correctly(self):
+        assert TEAM_NAME_MAP["UCONN"] == "UConn"
 
 
 # ---------------------------------------------------------------------------
