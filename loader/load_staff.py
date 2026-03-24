@@ -17,6 +17,7 @@ from typing import Any
 
 from neo4j import Driver
 
+from ingestion.role_constants import validate_role
 from loader import schema
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,18 @@ def load_staff(driver: Driver, staff: list[dict[str, Any]]) -> tuple[int, int]:
         print("Coaches merged:         0")
         print("COACHED_AT edges merged: 0")
         return 0, 0
+
+    # Validate role codes against the McIllece legend.  Unknown codes are
+    # ingested unchanged — the warning is informational only.
+    for rec in staff:
+        for role in (rec.get("roles") or []):
+            if not validate_role(role):
+                logger.warning(
+                    "Unknown role code %r for coach_code=%s year=%s — ingesting anyway",
+                    role,
+                    rec.get("coach_code"),
+                    rec.get("year"),
+                )
 
     coach_query = f"""
     UNWIND $rows AS row
