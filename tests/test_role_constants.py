@@ -12,6 +12,10 @@ from ingestion.role_constants import (
     ALL_ROLES,
     ASSISTANT_ROLES,
     COORDINATOR_ROLES,
+    DEFENSIVE_ROLES,
+    NEUTRAL_ROLES,
+    OFFENSIVE_ROLES,
+    same_unit,
     validate_role,
 )
 
@@ -252,3 +256,133 @@ class TestLoadStaffRoleValidation:
 
         role_warnings = [m for m in caplog.messages if "Unknown role" in m]
         assert role_warnings == []
+
+
+# ---------------------------------------------------------------------------
+# Unit role groupings
+# ---------------------------------------------------------------------------
+
+
+class TestUnitRoleGroupings:
+    """OFFENSIVE_ROLES, DEFENSIVE_ROLES, and NEUTRAL_ROLES cover all 38 codes."""
+
+    def test_offensive_roles_subset_of_all_roles(self) -> None:
+        assert OFFENSIVE_ROLES <= ALL_ROLES
+
+    def test_defensive_roles_subset_of_all_roles(self) -> None:
+        assert DEFENSIVE_ROLES <= ALL_ROLES
+
+    def test_neutral_roles_subset_of_all_roles(self) -> None:
+        assert NEUTRAL_ROLES <= ALL_ROLES
+
+    def test_offensive_and_defensive_are_disjoint(self) -> None:
+        overlap = OFFENSIVE_ROLES & DEFENSIVE_ROLES
+        assert overlap == set(), f"Unexpected overlap: {overlap}"
+
+    def test_unit_roles_cover_all_roles(self) -> None:
+        """Every role in ALL_ROLES belongs to exactly one unit group."""
+        covered = OFFENSIVE_ROLES | DEFENSIVE_ROLES | NEUTRAL_ROLES
+        missing = ALL_ROLES - covered
+        assert missing == set(), f"Roles not assigned to any unit group: {missing}"
+
+    def test_all_frozensets(self) -> None:
+        for s in (OFFENSIVE_ROLES, DEFENSIVE_ROLES, NEUTRAL_ROLES):
+            assert isinstance(s, frozenset)
+
+    def test_hc_in_neutral(self) -> None:
+        assert "HC" in NEUTRAL_ROLES
+
+    def test_oc_in_offensive(self) -> None:
+        assert "OC" in OFFENSIVE_ROLES
+
+    def test_dc_in_defensive(self) -> None:
+        assert "DC" in DEFENSIVE_ROLES
+
+    def test_st_in_neutral(self) -> None:
+        """Special teams coordinator is neutral."""
+        assert "ST" in NEUTRAL_ROLES
+
+
+# ---------------------------------------------------------------------------
+# same_unit()
+# ---------------------------------------------------------------------------
+
+
+class TestSameUnit:
+    """same_unit() returns True iff the mentor/mentee pair is unit-compatible."""
+
+    # HC mentor → anyone
+    def test_hc_mentor_to_defensive_role(self) -> None:
+        assert same_unit("HC", "DC") is True
+
+    def test_hc_mentor_to_offensive_role(self) -> None:
+        assert same_unit("HC", "OC") is True
+
+    def test_hc_mentor_to_lb_coach(self) -> None:
+        assert same_unit("HC", "LB") is True
+
+    def test_hc_mentor_to_wr_coach(self) -> None:
+        assert same_unit("HC", "WR") is True
+
+    # OC mentor → offensive/neutral mentee
+    def test_oc_mentor_to_wr_coach(self) -> None:
+        assert same_unit("OC", "WR") is True
+
+    def test_oc_mentor_to_rb_coach(self) -> None:
+        assert same_unit("OC", "RB") is True
+
+    def test_oc_mentor_to_hc(self) -> None:
+        """Mentee is HC (neutral) — should be compatible."""
+        assert same_unit("OC", "HC") is True
+
+    def test_oc_mentor_to_dc_blocked(self) -> None:
+        assert same_unit("OC", "DC") is False
+
+    def test_oc_mentor_to_lb_blocked(self) -> None:
+        assert same_unit("OC", "LB") is False
+
+    # DC mentor → defensive/neutral mentee
+    def test_dc_mentor_to_lb_coach(self) -> None:
+        assert same_unit("DC", "LB") is True
+
+    def test_dc_mentor_to_db_coach(self) -> None:
+        assert same_unit("DC", "DB") is True
+
+    def test_dc_mentor_to_oc_blocked(self) -> None:
+        assert same_unit("DC", "OC") is False
+
+    def test_dc_mentor_to_wr_blocked(self) -> None:
+        assert same_unit("DC", "WR") is False
+
+    # WR coach mentor → offensive mentee, blocked from defensive
+    def test_wr_mentor_to_te_coach(self) -> None:
+        assert same_unit("WR", "TE") is True
+
+    def test_wr_mentor_to_db_blocked(self) -> None:
+        assert same_unit("WR", "DB") is False
+
+    # ST (neutral) → anyone
+    def test_st_mentor_to_oc(self) -> None:
+        assert same_unit("ST", "OC") is True
+
+    def test_st_mentor_to_dc(self) -> None:
+        assert same_unit("ST", "DC") is True
+
+    def test_st_mentor_to_lb(self) -> None:
+        assert same_unit("ST", "LB") is True
+
+    # Unknown / None → permissive fallback
+    def test_none_mentor_role_permissive(self) -> None:
+        assert same_unit(None, "OC") is True
+
+    def test_none_mentee_role_permissive(self) -> None:
+        assert same_unit("DC", None) is True
+
+    def test_both_none_permissive(self) -> None:
+        assert same_unit(None, None) is True
+
+    def test_unknown_mentor_role_permissive(self) -> None:
+        assert same_unit("XX", "DC") is True
+
+    def test_unknown_mentee_role_permissive(self) -> None:
+        assert same_unit("DC", "ZZ") is True

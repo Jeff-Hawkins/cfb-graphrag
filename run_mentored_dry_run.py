@@ -42,8 +42,21 @@ def main() -> None:
         print(f"  {len(records):,} role-season records fetched")
 
         print("\nInferring MENTORED edges (COORDINATOR mentor, 2+ consecutive yrs) …")
-        edges = infer_mentored_edges_v2(records)
-        print(f"  {len(edges):,} projected MENTORED edges")
+        suppressed_unit_edges: list[dict] = []
+        edges = infer_mentored_edges_v2(records, _suppressed_unit_edges=suppressed_unit_edges)
+        before_unit_filter = len(edges) + len(suppressed_unit_edges)
+        print(f"  {before_unit_filter:,} candidate edges before same-unit filter")
+        print(f"  {len(suppressed_unit_edges):,} edges suppressed by same-unit filter")
+        print(f"  {len(edges):,} edges remaining after filter")
+
+        if suppressed_unit_edges:
+            print("\nSample suppressed edges (same-unit filter, up to 10):")
+            for s in suppressed_unit_edges[:10]:
+                print(
+                    f"  {s['mentor_role']:<4} → {s['mentee_role']:<4}"
+                    f"  {s['mentor_name']} → {s['mentee_name']}"
+                    f"  ({s['team']})"
+                )
 
         stats = compute_dry_run_stats(edges)
 

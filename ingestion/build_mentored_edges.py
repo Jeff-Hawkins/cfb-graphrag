@@ -24,6 +24,8 @@ from typing import Any
 
 from neo4j import Driver
 
+from ingestion.role_constants import same_unit
+
 logger = logging.getLogger(__name__)
 
 # Role priority for McIllece data: higher number = more senior.
@@ -54,6 +56,11 @@ _MENTOR_ROLE_PRIORITY: dict[str, int] = {
     "RG": 1,
     "RD": 1,
 }
+
+# Role abbreviations that qualify as "same-level coordinator peers" for Rule 2.
+# If both the potential mentor AND mentee held any of these roles at the same
+# program in the same year, the pair is considered peers — no MENTORED edge.
+_COORD_PEER_ROLES: frozenset[str] = frozenset({"OC", "DC"})
 
 
 # ---------------------------------------------------------------------------
@@ -321,25 +328,68 @@ def _best_mentor_role(abbrs: set[str]) -> str:
     return max(abbrs, key=lambda a: _MENTOR_ROLE_PRIORITY.get(a, 0))
 
 
+def _best_role_all(abbrs: set[str]) -> str | None:
+    """Return the most representative role abbreviation from *abbrs*.
+
+    Uses coordinator priority for known coordinator roles (HC highest), then
+    falls back to 1 for any other position/support role.  Returns ``None``
+    for an empty set.  Used to determine a coach's primary role for
+    same-unit classification when they may hold multiple roles.
+
+    Args:
+        abbrs: Set of role abbreviations held by a coach.
+
+    Returns:
+        The abbreviation with the highest representative priority, or ``None``.
+    """
+    if not abbrs:
+        return None
+
+    def _priority(a: str) -> int:
+        if a == "HC":
+            return 10
+        return _MENTOR_ROLE_PRIORITY.get(a, 1)
+
+    return max(abbrs, key=_priority)
+
+
 def infer_mentored_edges_v2(
     records: list[dict[str, Any]],
+    *,
+    _suppressed_unit_edges: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Infer MENTORED edges from mcillece_roles COACHED_AT records.
 
-    Rules applied:
-    - Coach A must hold a COORDINATOR-tier role (HC/OC/DC/AC/PG/PD/RG/RD)
-      in at least one year of the overlap window.
-    - The overlap between A and B at the same team must contain at least
-      **2 consecutive years**.
-    - Coach B can be any role tier.
-    - One edge per unique ``(mentor_code, mentee_code, team)`` triple
-      (different teams produce separate edges).
+    Rules applied (in order):
+    - **Rule 4 — No self-referential edges**: A coach cannot mentor themselves
+      (``mentor_code == mentee_code``).  Enforced by the inner loop guard.
+    - **Coordinator filter**: Coach A must hold a COORDINATOR-tier role
+      (HC/OC/DC/AC/PG/PD/RG/RD) in at least one year of the overlap window.
+    - **Rule 3 — Minimum overlap**: The overlap between A and B at the same
+      team must contain at least **2 consecutive years**.
+    - **Rule 1 — Prior HC**: If mentee (B) held any HC role at *any* program
+      before the earliest shared year with A, no MENTORED edge is created.
+      These are career-peer relationships, not mentor/mentee.
+    - **Rule 2 — Same-level coordinator**: If both A and B held OC or DC roles
+      at the same program in the same year, no MENTORED edge is created in
+      either direction.  Coordinators on the same staff are peers.
+    - **Same-unit filter**: If the mentor's primary role is on one side of the
+      ball (offensive or defensive) and the mentee's primary role is on the
+      opposite side, no MENTORED edge is created.  Roles that are unit-neutral
+      (HC, AC, ST, RC, special-teams) are compatible with any mentee.
+      Unknown roles fall back to permissive (edge kept).
+    - **Per-team dedup**: One edge per unique ``(mentor_code, mentee_code, team)``
+      triple (different teams produce separate edges).
 
     Args:
         records: Flat list of role-season dicts as returned by
             ``fetch_coached_at_mcillece_roles()``.  Each dict must have
             keys ``coach_code``, ``coach_name``, ``team``, ``year``,
             ``role_abbr``.
+        _suppressed_unit_edges: Optional list to collect edges suppressed by
+            the same-unit filter (for dry-run reporting).  Each appended dict
+            has keys ``mentor_role``, ``mentee_role``, ``mentor_name``,
+            ``mentee_name``, ``team``.
 
     Returns:
         List of edge dicts with keys:
@@ -356,15 +406,33 @@ def infer_mentored_edges_v2(
         school_roles[rec["team"]][rec["coach_code"]][rec["year"]].add(rec["role_abbr"])
         code_to_name[rec["coach_code"]] = rec["coach_name"]
 
+    # Rule 1 pre-pass: build global map of coach_code → set of years they held HC
+    # at ANY team.  Used to detect mentees with prior head-coaching experience.
+    coach_hc_years: dict[int, set[int]] = defaultdict(set)
+    for _team, coach_data in school_roles.items():
+        for code, year_roles in coach_data.items():
+            for yr, abbrs in year_roles.items():
+                if "HC" in abbrs:
+                    coach_hc_years[code].add(yr)
+
     seen: set[tuple[int, int, str]] = set()
     edges: list[dict[str, Any]] = []
+
+    # Suppression counters for logging
+    rule1_suppressed = 0
+    rule2_suppressed = 0
+    rule3_suppressed = 0
+    rule4_suppressed = 0
+    same_unit_suppressed = 0
 
     for team, coaches in school_roles.items():
         coach_list = list(coaches.keys())
         for a in coach_list:
             years_a = set(coaches[a])
             for b in coach_list:
+                # Rule 4 — No self-referential edges: a coach cannot mentor themselves.
                 if a == b:
+                    rule4_suppressed += 1
                     continue
                 key = (a, b, team)
                 if key in seen:
@@ -375,7 +443,8 @@ def infer_mentored_edges_v2(
                 if not overlap:
                     continue
 
-                # A must hold a coordinator role in at least one overlap year
+                # Coordinator filter: A must hold a coordinator role in at least
+                # one overlap year to qualify as a potential mentor.
                 a_coord_abbrs: set[str] = {
                     abbr
                     for yr in overlap
@@ -385,8 +454,93 @@ def infer_mentored_edges_v2(
                 if not a_coord_abbrs:
                     continue
 
-                # Need 2+ consecutive shared years
+                # Rule 3 — minimum 2 consecutive shared years
                 if _max_consecutive(overlap) < 2:
+                    rule3_suppressed += 1
+                    continue
+
+                # Rule 1 — Prior HC (two-part check):
+                # Part A — mentee was HC at THIS team during any overlap year.
+                #   Prevents inverting the hierarchy: if B was HC at this school
+                #   during the overlap, B is the senior figure, not A's mentee.
+                b_hc_at_team: set[int] = {
+                    yr for yr in overlap
+                    if "HC" in coaches[b].get(yr, set())
+                }
+                # Part B — mentee was HC at ANY program strictly before the
+                #   earliest shared year (global prior-HC career check).
+                overlap_start = min(overlap)
+                b_prior_hc_global: set[int] = {
+                    y for y in coach_hc_years.get(b, set()) if y < overlap_start
+                }
+                if b_hc_at_team or b_prior_hc_global:
+                    rule1_suppressed += 1
+                    logger.debug(
+                        "Rule 1 suppressed: mentee %s (code=%d) — "
+                        "HC at %s during overlap years=%s, "
+                        "prior global HC (<%d)=%s",
+                        code_to_name.get(b, ""),
+                        b,
+                        team,
+                        sorted(b_hc_at_team),
+                        overlap_start,
+                        sorted(b_prior_hc_global),
+                    )
+                    continue
+
+                # Rule 2 — Same-level coordinator: if both A and B held OC or DC
+                # at this team in the same overlap year, they are peers — skip.
+                same_level_years = {
+                    yr
+                    for yr in overlap
+                    if (coaches[a][yr] & _COORD_PEER_ROLES)
+                    and (coaches[b][yr] & _COORD_PEER_ROLES)
+                }
+                if same_level_years:
+                    rule2_suppressed += 1
+                    logger.debug(
+                        "Rule 2 suppressed: %s (code=%d) and %s (code=%d) both held "
+                        "OC/DC at %s in years %s",
+                        code_to_name.get(a, ""),
+                        a,
+                        code_to_name.get(b, ""),
+                        b,
+                        team,
+                        sorted(same_level_years),
+                    )
+                    continue
+
+                # Same-unit filter: mentor and mentee must be on compatible units.
+                mentor_role_abbr = _best_mentor_role(a_coord_abbrs)
+                b_overlap_abbrs: set[str] = {
+                    abbr
+                    for yr in overlap
+                    for abbr in coaches[b].get(yr, set())
+                }
+                mentee_role_abbr = _best_role_all(b_overlap_abbrs)
+                if not same_unit(mentor_role_abbr, mentee_role_abbr):
+                    same_unit_suppressed += 1
+                    logger.debug(
+                        "Same-unit suppressed: mentor %s (%s, code=%d) → "
+                        "mentee %s (%s, code=%d) at %s",
+                        code_to_name.get(a, ""),
+                        mentor_role_abbr,
+                        a,
+                        code_to_name.get(b, ""),
+                        mentee_role_abbr,
+                        b,
+                        team,
+                    )
+                    if _suppressed_unit_edges is not None:
+                        _suppressed_unit_edges.append(
+                            {
+                                "mentor_role": mentor_role_abbr,
+                                "mentee_role": mentee_role_abbr or "?",
+                                "mentor_name": code_to_name.get(a, ""),
+                                "mentee_name": code_to_name.get(b, ""),
+                                "team": team,
+                            }
+                        )
                     continue
 
                 seen.add(key)
@@ -398,11 +552,21 @@ def infer_mentored_edges_v2(
                         "mentee_name": code_to_name.get(b, ""),
                         "team": team,
                         "overlap_years": _max_consecutive(overlap),
-                        "mentor_role_abbr": _best_mentor_role(a_coord_abbrs),
+                        "mentor_role_abbr": mentor_role_abbr,
                     }
                 )
 
-    logger.info("Inferred %d projected MENTORED edges (v2, mcillece_roles)", len(edges))
+    logger.info(
+        "Inferred %d projected MENTORED edges (v2, mcillece_roles) | "
+        "suppressed: Rule1(prior-HC)=%d, Rule2(same-coord)=%d, "
+        "Rule3(min-overlap)=%d, Rule4(self-ref)=%d, same-unit=%d",
+        len(edges),
+        rule1_suppressed,
+        rule2_suppressed,
+        rule3_suppressed,
+        rule4_suppressed,
+        same_unit_suppressed,
+    )
     return edges
 
 
