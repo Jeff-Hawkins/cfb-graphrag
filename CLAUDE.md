@@ -162,7 +162,7 @@ cfb-graphrag/
 | COACHED_AT | 77,813 | CFBD (12,414) + McIllece season-level (26,368) + McIllece per-role (39,031) |
 | PLAYED | 26,918 | CFBD |
 | IN_CONFERENCE | 702 | CFBD |
-| MENTORED | 13,940 | McIllece staff overlap — same-unit filter active (7,157 suppressed); 14,676 per-team edges → 13,940 unique pairs |
+| MENTORED | 14,219 | McIllece staff overlap — same-unit filter active (6,896 suppressed); 14,937 per-team edges → 14,219 unique pairs |
 | SAME_PERSON | TBD | CFBD ↔ McIllece identity edges — run loader/load_identity_edges.py |
 | **Total** | **356,905+** | |
 
@@ -185,7 +185,7 @@ Data range: rosters and games 2015–2025. McIllece staff data 2005–2025 (full
 
 **MENTORED inference note:** Two inference methods exist:
 - **CFBD-based (163 edges):** Inferred from head-coaching transition overlaps only. Famous staff hierarchies (Saban → Smart, etc.) are not captured.
-- **McIllece-based (`infer_mentored_edges_v2()`):** Uses actual staff records with role priority (HC > OC/DC > position coach) and **2+ consecutive season overlap** requirement. Four suppression rules: Rule 1 (prior HC — two-part: Part A same-team HC during any overlap year; Part B global prior HC before overlap_start), Rule 2 (same-level coordinator peers), Rule 3 (min 2 consecutive years), Rule 4 (no self-loops). **Same-unit filter** (2026-03-24): blocks cross-unit edges (e.g. DC → WR coach); HC/neutral roles pass any mentee. `_best_mentor_role()` and `_best_role_all()` now use alphabetical tiebreaker — fully deterministic (fixed 2026-03-24). Correct deterministic output: **14,937 per-team edges**. Railway currently has 13,940 unique pairs (loaded pre-fix); rebuild needed to reach correct state.
+- **McIllece-based (`infer_mentored_edges_v2()`):** Uses actual staff records with role priority (HC > OC/DC > position coach) and **2+ consecutive season overlap** requirement. Four suppression rules: Rule 1 (prior HC — two-part: Part A same-team HC during any overlap year; Part B global prior HC before overlap_start), Rule 2 (same-level coordinator peers), Rule 3 (min 2 consecutive years), Rule 4 (no self-loops). **Same-unit filter** (2026-03-24): blocks cross-unit edges (e.g. DC → WR coach); HC/neutral roles pass any mentee. `_best_mentor_role()` and `_best_role_all()` use alphabetical tiebreaker — fully deterministic (fixed 2026-03-24). Deterministic output: **14,937 per-team edges → 14,219 unique pairs** in Railway (718 pairs appeared at multiple schools, MERGEd to one edge).
 
 McIllece coaches are keyed by `coach_code`. CFBD coaches (matched by `first_name + last_name`) are untouched.
 
@@ -358,4 +358,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 7 (2026-03-24) — Same-unit filter loaded and tiebreaker fixed. Railway MENTORED: 20,932 → 13,940 (pre-fix load). Deterministic tiebreaker added to _best_mentor_role() and _best_role_all() (alphabetical fallback); correct deterministic count is 14,937 per-team edges — Railway rebuild needed. F4b COMPLETE: all top-10 coach narratives written and saved to Neo4j. 601/601 tests pass. Next: run scripts/rebuild_mentored_edges.py again to load correct 14,937-edge set, then Phase 0 exit — Saban tree screenshot via Streamlit.*
+*Last updated: Session 7 (2026-03-24) — Same-unit filter + deterministic tiebreaker loaded into Railway. Railway MENTORED: 20,932 → 14,219 unique pairs (14,937 per-team edges, 6,896 same-unit suppressed, 3,036 Rule 1 suppressed). _best_mentor_role() + _best_role_all() fixed with (priority, abbr) key — fully deterministic. F4b COMPLETE: all top-10 coach narratives written and saved to Neo4j. 601/601 tests pass. Next: Phase 0 exit — Saban tree screenshot via Streamlit.*

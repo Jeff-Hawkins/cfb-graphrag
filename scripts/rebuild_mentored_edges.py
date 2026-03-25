@@ -35,7 +35,7 @@ from loader.neo4j_loader import get_driver
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-_EXPECTED_COUNT = 14_403
+_EXPECTED_COUNT = 14_219
 
 
 def delete_all_mentored(driver) -> int:
