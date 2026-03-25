@@ -82,8 +82,12 @@ cfb-graphrag/
 │   ├── __init__.py
 │   ├── entity_extractor.py   ← NL → entity names via Gemini
 │   ├── graph_traversal.py    ← Neo4j Cypher traversal logic
+│   ├── narratives.py         ← F4b precomputed tree narratives (read/write + TreeSummary)
 │   ├── retriever.py          ← orchestrates the full RAG pipeline
 │   └── vanilla_rag.py        ← baseline comparison (text search)
+│
+├── scripts/
+│   └── author_narrative_saban.py  ← F4b authoring CLI (fetch summary → write → save to Neo4j)
 │
 ├── app/
 │   ├── streamlit_app.py
@@ -139,7 +143,7 @@ cfb-graphrag/
 (:Player)-[:PLAYED_FOR {year, jersey}]->(:Team)    ← year = calendar season (2015–2025)
 (:Team)-[:IN_CONFERENCE]->(:Conference)
 (:Team)-[:PLAYED {game_id, home_score, away_score, season, week}]->(:Team)
-(:Coach)-[:MENTORED]->(:Coach)
+(:Coach)-[:MENTORED {confidence_flag}]->(:Coach)
 (:Coach)-[:SAME_PERSON {match_type, confidence}]->(:Coach)  ← CFBD node → McIllece node (Session 4)
 ```
 
@@ -158,9 +162,9 @@ cfb-graphrag/
 | COACHED_AT | 77,813 | CFBD (12,414) + McIllece season-level (26,368) + McIllece per-role (39,031) |
 | PLAYED | 26,918 | CFBD |
 | IN_CONFERENCE | 702 | CFBD |
-| MENTORED | 26,244 | 163 CFBD overlaps + 26,081 McIllece staff overlap (2+ season filter) |
+| MENTORED | 13,940 | McIllece staff overlap — same-unit filter active (7,157 suppressed); 14,676 per-team edges → 13,940 unique pairs |
 | SAME_PERSON | TBD | CFBD ↔ McIllece identity edges — run loader/load_identity_edges.py |
-| **Total** | **363,217+** | |
+| **Total** | **356,905+** | |
 
 Data range: rosters and games 2015–2025. McIllece staff data 2005–2025 (full FBS). Coaches span all years recorded by CFBD and McIllece.
 
@@ -174,9 +178,14 @@ Data range: rosters and games 2015–2025. McIllece staff data 2005–2025 (full
 - `POSITION_COACH` — QB, RB, WR, OL, DL, DB, LB, TE, DE, DT, CB, SF, IB, OB, IR, GC, OT, FB, OR
 - `SUPPORT` — ST, RC, OF, DF, KO, KR, PR, PK, PT, NB, FG
 
+**MENTORED `confidence_flag` values** (set by `ingestion/migrations/add_mentored_confidence_flag.py` + `ingestion/flag_mentored_edges.py`):
+- `STANDARD` — inference direction is reliable (default for all edges)
+- `REVIEW_REVERSE` — mentee's prior career suggests real influence may flow the opposite direction
+- `REVIEW_MUTUAL` — coaches have a long bidirectional relationship; direction is ambiguous
+
 **MENTORED inference note:** Two inference methods exist:
 - **CFBD-based (163 edges):** Inferred from head-coaching transition overlaps only. Famous staff hierarchies (Saban → Smart, etc.) are not captured.
-- **McIllece-based (`infer_mentored_pairs_mcillece()`):** Uses actual staff records with role priority (HC > OC/DC > position coach) and **2+ season overlap** requirement. Full FBS 2005–2025 dataset loaded → 26,081 new pairs MERGEd into Railway Neo4j (Session 3D Task 4).
+- **McIllece-based (`infer_mentored_edges_v2()`):** Uses actual staff records with role priority (HC > OC/DC > position coach) and **2+ consecutive season overlap** requirement. Four suppression rules: Rule 1 (prior HC — two-part: Part A same-team HC during any overlap year; Part B global prior HC before overlap_start), Rule 2 (same-level coordinator peers), Rule 3 (min 2 consecutive years), Rule 4 (no self-loops). **Same-unit filter** (2026-03-24): blocks cross-unit edges (e.g. DC → WR coach); HC/neutral roles pass any mentee. Full FBS 2005–2025 rebuilt 2026-03-24 → 13,940 unique MENTORED pairs on Railway (14,676 per-team edges, 7,157 same-unit suppressed, 3,036 Rule 1 suppressed). Note: minor non-determinism in `_best_role_all()` when a coach holds equal-priority roles (OC+DC tie) — ±30 edge variance between runs; fix before next rebuild.
 
 McIllece coaches are keyed by `coach_code`. CFBD coaches (matched by `first_name + last_name`) are untouched.
 
@@ -193,6 +202,12 @@ McIllece coaches are keyed by `coach_code`. CFBD coaches (matched by `first_name
 - Save all raw API responses to `data/raw/` before transforming
 - Never re-hit the API if a local JSON file already exists
 - Shared HTTP helpers live in `ingestion/utils.py`
+
+## Cypher Gotchas
+
+- **No parameters in variable-length relationship ranges.** Neo4j rejects `[:MENTORED*1..$depth]` with a syntax error. Clamp depth to 1–4 in Python, then interpolate it directly into the f-string query: `f"[:MENTORED*1..{depth}]"`. This is safe because the value is already bounded.
+- **`head(collect(...))` picks an arbitrary element without pre-sorting.** When you want the *shortest* path per mentee, add `ORDER BY length(path)` in a preceding `WITH` clause before the aggregation `WITH` — otherwise `collect` order is undefined.
+- **SAME_PERSON edges are not yet loaded on Railway** (as of Session 5). Queries that traverse `SAME_PERSON` will trigger a `01N51` warning but not fail (they use `OPTIONAL MATCH`). Run `loader/load_identity_edges.py` to populate these edges. Until then, McIllece lookups by `name` property work as a fallback.
 
 ## CFBD API Field Name Gotchas
 
@@ -343,4 +358,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 4 — Identity resolution pipeline added (ingestion/match_coach_identity.py, loader/load_identity_edges.py). SAME_PERSON edge type added to schema (CFBD ↔ McIllece). google-generativeai migrated to google-genai SDK across all graphrag/ modules. resolve_coach_entity() added to entity_extractor.py. graphrag/classifier.py added with 5-bucket intent routing (TREE_QUERY | PERFORMANCE_COMPARE | PIPELINE_QUERY | CHANGE_IMPACT | SIMILARITY). get_coaching_tree() added to graph_traversal.py (McIllece MENTORED traversal, role_filter, max_depth 1–4, path_coaches provenance). retriever.py fully wired with classifier → entity resolution → intent-routed traversal → Gemini synthesis. demo_queries.py added at project root. 31 new tests added; 251/251 pass.*
+*Last updated: Session 7 (2026-03-24) — Same-unit filter loaded into Railway. scripts/rebuild_mentored_edges.py: deletes all MENTORED (batched), re-infers via infer_mentored_edges_v2() with same-unit filter, loads via load_mentored_edges_mcillece(). Railway MENTORED: 20,932 → 13,940 unique pairs (14,676 per-team edges, 7,157 same-unit suppressed, 3,036 Rule 1 suppressed). `_best_role_all()` non-determinism (±30 edge variance) — fix max() tie-break before next rebuild. F4b COMPLETE: all top-10 coach narratives written and saved to Neo4j. 601/601 tests pass. Next: Phase 0 exit criteria — Saban tree screenshot via Streamlit.*
