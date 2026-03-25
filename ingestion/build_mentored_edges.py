@@ -319,13 +319,16 @@ def _max_consecutive(years: set[int]) -> int:
 def _best_mentor_role(abbrs: set[str]) -> str:
     """Return the highest-priority coordinator role abbreviation from *abbrs*.
 
+    Ties are broken alphabetically so the result is deterministic regardless
+    of set iteration order.
+
     Args:
         abbrs: Set of coordinator role abbreviations held by a mentor.
 
     Returns:
         The abbreviation with the highest ``_MENTOR_ROLE_PRIORITY`` score.
     """
-    return max(abbrs, key=lambda a: _MENTOR_ROLE_PRIORITY.get(a, 0))
+    return max(abbrs, key=lambda a: (_MENTOR_ROLE_PRIORITY.get(a, 0), a))
 
 
 def _best_role_all(abbrs: set[str]) -> str | None:
@@ -335,6 +338,9 @@ def _best_role_all(abbrs: set[str]) -> str | None:
     falls back to 1 for any other position/support role.  Returns ``None``
     for an empty set.  Used to determine a coach's primary role for
     same-unit classification when they may hold multiple roles.
+
+    Ties are broken alphabetically so the result is deterministic regardless
+    of set iteration order.
 
     Args:
         abbrs: Set of role abbreviations held by a coach.
@@ -350,7 +356,7 @@ def _best_role_all(abbrs: set[str]) -> str | None:
             return 10
         return _MENTOR_ROLE_PRIORITY.get(a, 1)
 
-    return max(abbrs, key=_priority)
+    return max(abbrs, key=lambda a: (_priority(a), a))
 
 
 def infer_mentored_edges_v2(
