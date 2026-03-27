@@ -6,6 +6,12 @@ data/raw/
 data/mcillece/
 data/migrations/
 
+# Vendored libraries (CDN downloads)
+lib/
+
+# Generated reports
+reports/
+
 # Python
 __pycache__/
 *.py[cod]
