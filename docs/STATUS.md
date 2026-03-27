@@ -10,16 +10,21 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 ### Active Sprint (week of 2026-03-25)
 
 **In Progress:**
-- [ ] F4c: Live Streamlit verification — Saban tree must render hierarchically with Navy design system
-- [ ] F4c: Take Phase 0 exit screenshot — Saban coaching tree, role-colored, hierarchical UD layout
+- [ ] F4c: Full-site UI rebuild — match CFB IQ mockup (top nav, stats row, full-width layout, Streamlit shell styling)
 - [ ] F4c: Populate richer node data (team, years, SP+) from graph traversal when available
+- [ ] F2: Query Presets — first 5 Cypher+NL templates (Saban tree, OC draft production, staff stability)
 
 **Up Next:**
-- [ ] F2: Query Presets — first 5 Cypher+NL templates (Saban tree, OC draft production, staff stability)
 - [ ] F3: Event Tracking — JSON lines logger in Streamlit
 - [ ] A1: Fix validate.py + anomaly_checks.py import paths; run full validation report
 
 **Done This Sprint:**
+- [x] 2026-03-26 — F4c: Role data pipeline — `role` + `mentor_coach_id` fields added to ResultRow. `get_best_roles()` batch Cypher lookup (HC > OC > DC > POS priority). `_resolve_role()` uses actual role from Neo4j instead of defaulting all nodes to HC.
+- [x] 2026-03-26 — F4c: Depth-2 HC tree — `_fetch_direct_mentees()` now fetches depth 1–2 with `role_filter="HC"`. Correct edge wiring via `mentor_coach_id`. Orphaned depth-2 nodes (mentor not in depth-1 set) filtered out.
+- [x] 2026-03-26 — F4c: Component height 580→830px for better screenshots.
+- [x] 2026-03-26 — Gemini model upgrade 2.0-flash → 2.5-flash across classifier, entity_extractor, planner, vanilla_rag. `parse_gemini_json()` utility for markdown-fenced JSON responses.
+- [x] 2026-03-26 — 15 new tests (get_best_roles, _resolve_role, role passthrough, depth-2 inclusion). 663/663 pass.
+- [x] 2026-03-26 — All previously untracked Session 5–10 files committed (executor, retry, synthesizer, narratives, utils, agents scaffold, scripts, precomputed narratives).
 - [x] 2026-03-25 — F4c: `ui/design_system/DESIGN_SYSTEM.md` — navy palette, role colors (HC gold, OC coral, DC blue, POS purple), typography, component rules, vis.js node specs
 - [x] 2026-03-25 — F4c: `ui/components/coaching_tree.html` — vis.js 4.21.0 three-panel layout (filters | hierarchical UD network | coach detail card), CDN loaded, role-based node styling, click-to-detail, hover tooltips, legend
 - [x] 2026-03-25 — F4c: `ui/components/graph_component.py` — `result_to_graph_data()` converts GraphRAGQueryResult → nodes/edges/meta JSON; `render_coaching_tree()` injects into template via `st.components.v1.html()`
@@ -65,8 +70,8 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 - [ ] F2 has 10+ working presets across at least 3 segments
 - [ ] F3 event tracking logging every query
 - [ ] A1 validation report runs clean on known ground truth
-- [ ] Saban coaching tree screenshot is visually compelling and factually accurate
-- [ ] **THE SCREENSHOT EXISTS. Phase 1 does not start without it.**
+- [ ] Full CFB IQ site UI matches mockup (top nav, stats row, full-width graph, Streamlit shell styling)
+- [ ] **Site screenshot exists showing the complete redesigned UI. Phase 1 does not start without it.**
 
 ### Phase 1 → Phase 2
 - [ ] 4+ content posts published per month for 2+ consecutive months
@@ -111,6 +116,10 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 | 2026-03-25 | DESIGN_SYSTEM.md as pre-read for all UI sessions | Locks palette, role colors, typography, and component rules across Claude Code sessions. Prevents style drift. Tokens migrate directly to React CSS variables in Phase 4 (F11). |
 | 2026-03-25 | JSON inject (not postMessage) for vis.js data handoff | Python serializes GraphRAGQueryResult → JSON, replaces __GRAPH_DATA__ token in HTML template, passes to st.components.v1.html(). Zero extra infra for Phase 0-3. Swap to API call in Phase 4. |
 | 2026-03-25 | sys.path guard in streamlit_app.py | `Path(__file__).parent.parent` ensures project root is always on sys.path regardless of how Streamlit is invoked. Required after adding `ui/` as a sibling package to `app/`. |
+| 2026-03-26 | Batch role lookup via `get_best_roles()` rather than enriching Cypher tree query | Keeps the variable-length path query simple; role lookup is a separate O(1) batch call. Cleaner separation of concerns. |
+| 2026-03-26 | HC role_filter + orphan filtering for depth-2 tree | Cypher `role_filter` only checks leaf nodes, not intermediates. Depth-2 mentees whose depth-1 mentor is non-HC (filtered out) would render as orphans. Post-query filter removes them. |
+| 2026-03-26 | Phase 0 exit = full site UI rebuild, not just Saban screenshot | User wants the complete CFB IQ site matching the mockup before sharing. Individual tree screenshot is no longer the gate. |
+| 2026-03-26 | Gemini 2.5-flash replaces 2.0-flash | Better JSON compliance, faster, same cost tier. `parse_gemini_json()` handles markdown-fenced responses from 2.5. |
 
 ---
 
@@ -134,6 +143,7 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 | Date | What Was Built | Next Session |
 |------|---------------|--------------|
+| 2026-03-26 | Session 11: Role data pipeline — `role` + `mentor_coach_id` on ResultRow, `get_best_roles()` batch Cypher, `_resolve_role()`. Depth-2 HC tree with correct edge wiring and orphan filtering. Gemini 2.5-flash upgrade + `parse_gemini_json()`. Component height bump (580→830px). All untracked Session 5–10 files committed. 663/663 tests. | Full-site UI rebuild to match CFB IQ mockup (top nav, stats row, full-width layout, Streamlit shell CSS). Populate team/years/SP+ in node data. |
 | 2026-03-25 | Session 10: F4c vis.js coaching tree component built. Pyvis replaced with three-panel vis.js layout (DESIGN_SYSTEM.md, coaching_tree.html, graph_component.py). Hierarchical layout bug fixed (depth→level mapping). sys.path guard in streamlit_app.py. 648/648 tests. | Live verification with Neo4j, Saban tree screenshot (Phase 0 exit), richer node data (team/years/SP+) |
 | 2026-03-24 | Session 6: Rule 1 two-part prior-HC fix in `infer_mentored_edges_v2()`. Full MENTORED rebuild on Railway (22,020→20,932). Cycle detection in `get_head_coach_tree_summary()`. Deleted 2 bad Saban inbound edges. Clean Saban tree verified (8 direct HC, 112 total HC, 2,070 total). 553→556 tests. `diagnose_rule1.py` + `delete_saban_inbound_mentored.py`. | Write narratives/saban.txt → --save → Streamlit screenshot (Phase 0 exit) |
 | 2026-03-23 | Session 5: F4 complete (classifier, planner, executor, retry, synthesizer). F4b infrastructure: narratives.py, author_narrative_saban.py. Streamlit wired to F4 pipeline. A1 confidence_flag layer. role_constants.py. 553 tests. | MENTORED edge Rule 1 fix (prior-HC two-part check) |

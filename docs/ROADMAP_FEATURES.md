@@ -42,7 +42,7 @@ Each phase builds on validated learnings from the previous one. Features (F) are
 | **A1** | **Data Quality / Validation Agent** **WHAT:** Audits Neo4j data against known ground truth after each ingestion batch. Validates MENTORED edge confidence scores against known coaching trees (Saban, Meyer, Fisher). Flags anomalies. **WHY:** Ingestion will have edge cases — duplicates, missing years, coaches with multiple roles. Catching errors before they propagate into content saves you from publishing wrong data. **IMPL:** agents/data_validation/: ground_truth.yaml, validate.py, anomaly_checks.py, mentorship_confidence.py. Run after every ingestion batch. **Status: IN PROGRESS — 2026-03-24.** Built: add_mentored_confidence_flag.py, flag_mentored_edges.py, role_constants.py (COORDINATOR_ROLES, ASSISTANT_ROLES, ALL_ROLES, same_unit() filter, OFFENSIVE/DEFENSIVE/NEUTRAL_ROLES partition). confidence_flag surfaced in synthesizer + retriever UI. 601/601 tests pass. Remaining: confidence_flag re-run after edge rebuild, ground_truth.yaml, validate.py, anomaly_checks.py for general ingestion auditing. |
 | --- | --- |
 
-| **EXIT CRITERIA:** One screenshot of the Saban coaching tree — rendered in the vis.js component with the navy design system — that makes people stop scrolling. The graph must be visually impressive, role-colored, hierarchically laid out, and the query must be explainable via the right context panel. |
+| **EXIT CRITERIA:** The full CFB IQ site UI matches the reference mockup — top nav, stats row, full-width graph canvas, Streamlit shell styled to navy design system. Screenshot of the complete redesigned site with a Saban coaching tree rendered. The graph must be visually impressive, role-colored, hierarchically laid out, and the query must be explainable via the right context panel. |
 | --- |
 
 ---
@@ -203,7 +203,7 @@ The user provided a polished mockup of the full "CFB IQ" site. This is the north
 | "Screenshot" button | Center panel bottom | Not built |
 | Coordinator presets (SEC DCs 2024, OC Hire Grades) | Left sidebar | Not built — F2 presets needed |
 | Conference filter dropdown | Left sidebar | Stubbed in HTML, not wired |
-| Role-differentiated node colors in live data (OC coral, DC blue vs all-HC gold) | Graph canvas | Blocked — graph_component.py defaults all nodes to HC; need role data from COACHED_AT edges |
+| Role-differentiated node colors in live data (OC coral, DC blue vs all-HC gold) | Graph canvas | DONE — `get_best_roles()` + `_resolve_role()` pipeline. HC gold, OC coral, DC blue, POS purple render correctly. |
 
 **What IS already matching the mockup:**
 - Navy background (#0F1729)
@@ -216,4 +216,4 @@ The user provided a polished mockup of the full "CFB IQ" site. This is the north
 - Barlow Condensed headers, Inter body font
 - Flat surfaces, no shadows, 14px border-radius cards
 
-*Last updated: 2026-03-25 — F4c built: vis.js three-panel component, DESIGN_SYSTEM.md, graph_component.py wrapper, Pyvis replaced in app. Hierarchical layout bug fixed (depth→level). 648 tests. UI target mockup captured as reference spec.*
+*Last updated: 2026-03-26 — Session 11: Role data pipeline (get_best_roles, _resolve_role, mentor_coach_id edge wiring). Depth-2 HC tree with orphan filtering. Gemini 2.5-flash upgrade. 663 tests. Phase 0 exit criteria changed: full site UI rebuild matching CFB IQ mockup, not just Saban screenshot.*

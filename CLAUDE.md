@@ -19,7 +19,7 @@ Portfolio project — code quality, testing, and documentation matter.
 |---|---|
 | Language | Python 3.11+ |
 | Graph DB | Neo4j on Railway (migrated from AuraDB free tier 2026-03-22) |
-| LLM | Google Gemini Python SDK (`gemini-2.0-flash`) |
+| LLM | Google Gemini Python SDK (`gemini-2.5-flash`) |
 | Data Source | CFBD API (college football data) + McIllece CFB Coaches Database (CSV/XLSX) |
 | UI | Streamlit |
 | Graph Viz | vis.js 4.21.0 (CDN) — replaced Pyvis in Session 10 |
@@ -263,7 +263,7 @@ All normalization is done in `pipeline.py` before calling any loader function.
 
 ## LLM Notes
 
-- All `graphrag/` modules use **`google-genai`** SDK (migrated from `google-generativeai` in Session 4) with model `gemini-2.0-flash`
+- All `graphrag/` modules use **`google-genai`** SDK (migrated from `google-generativeai` in Session 4) with model `gemini-2.5-flash`
 - API usage: `client = genai.Client(api_key=...)`, then `client.models.generate_content(model=..., contents=..., config=types.GenerateContentConfig(system_instruction=...))`
 - Functions accept an optional `client: genai.Client | None` param; each function creates its own client if None
 - Tests mock `client.models.generate_content.return_value.text = "..."`
@@ -370,4 +370,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 10 (2026-03-25) — Pyvis replaced with vis.js coaching tree component (F4c). Three-panel layout: left (depth slider, role filter, preset buttons), center (hierarchical UD vis.js Network), right (coach detail card on node click). DESIGN_SYSTEM.md locks navy palette + role colors + typography. graph_component.py converts GraphRAGQueryResult → __GRAPH_DATA__ JSON → st.components.v1.html(). Level mapping bug fixed (depth→level for vis.js hierarchical layout). sys.path guard added to streamlit_app.py. 648/648 tests pass. Phase 0 exit: Saban tree renders hierarchically with role-based node styling — screenshot pending.*
+*Last updated: Session 11 (2026-03-26) — Role data pipeline: `role` + `mentor_coach_id` on ResultRow, `get_best_roles()` batch Cypher, `_resolve_role()` uses actual role from Neo4j. Depth-2 HC tree with correct edge wiring and orphan filtering. Gemini 2.5-flash upgrade + `parse_gemini_json()`. Component height 580→830px. All previously untracked Session 5–10 files committed. 663/663 tests pass. Phase 0 exit criteria changed: full CFB IQ site UI rebuild matching mockup (not just Saban screenshot). Next: full-width layout, top nav, stats row, Streamlit shell styling, team/years/SP+ node data.*
