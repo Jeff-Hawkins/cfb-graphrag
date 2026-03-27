@@ -481,6 +481,7 @@ function buildVisNode(n) {
   return {
     id: n.id,
     label: n.label,
+    level: n.level,   // required by vis.js hierarchical layout
     shape,
     size,
     borderWidth: bw,

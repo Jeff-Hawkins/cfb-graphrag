@@ -202,6 +202,26 @@ def test_role_assignment_mentee_defaults_to_hc():
 
 
 # ---------------------------------------------------------------------------
+# test_depth_maps_to_level
+# ---------------------------------------------------------------------------
+
+
+def test_depth_maps_to_level():
+    """Every node's level field must equal its depth (vis.js hierarchical requirement)."""
+    rows = [
+        _make_row("Direct Mentee", depth=1, coach_id=10),
+        _make_row("Second Gen",    depth=2, coach_id=11),
+    ]
+    result = _make_result(root_name="Nick Saban", rows=rows)
+    data = result_to_graph_data(result)
+
+    by_depth = {n["depth"]: n for n in data["nodes"]}
+    assert by_depth[0]["level"] == 0, "root node must have level=0"
+    assert by_depth[1]["level"] == 1, "depth-1 node must have level=1"
+    assert by_depth[2]["level"] == 2, "depth-2 node must have level=2"
+
+
+# ---------------------------------------------------------------------------
 # test_depth_filter
 # ---------------------------------------------------------------------------
 

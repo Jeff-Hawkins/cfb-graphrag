@@ -131,7 +131,8 @@ def result_to_graph_data(
             "years": "",
             "sp_plus": None,
             "depth": 0,
-            "explain": f"Root of coaching tree.",
+            "level": 0,
+            "explain": "Root of coaching tree.",
             "mentee_count": None,
             "draft_picks": None,
             "confidence_flag": None,
@@ -162,6 +163,7 @@ def result_to_graph_data(
                 "years": "",
                 "sp_plus": None,
                 "depth": row.depth,
+                "level": row.depth,
                 "explain": row.explanation or "",
                 "mentee_count": None,
                 "draft_picks": None,
@@ -185,6 +187,11 @@ def result_to_graph_data(
         "hc_mentees": hc_mentees,
         "query_depth": max(n["depth"] for n in nodes) if nodes else 0,
     }
+
+    logger.debug(
+        "result_to_graph_data sample nodes: %s",
+        nodes[:3],
+    )
 
     return {"nodes": nodes, "edges": edges, "meta": meta}
 
