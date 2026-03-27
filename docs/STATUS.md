@@ -7,16 +7,37 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 ## Current Phase: 0 — Core Build
 
-### Active Sprint (week of 2026-03-22)
+### Active Sprint (week of 2026-03-25)
 
 **In Progress:**
-- [ ] Rebuild MENTORED edges from McIllece assistant staff data (full FBS dataset now loaded)
-- [ ] S4: GraphRAG pipeline (F4 smart query planning architecture)
+- [ ] F4c: Live Streamlit verification — Saban tree must render hierarchically with Navy design system
+- [ ] F4c: Take Phase 0 exit screenshot — Saban coaching tree, role-colored, hierarchical UD layout
+- [ ] F4c: Populate richer node data (team, years, SP+) from graph traversal when available
 
 **Up Next:**
-- [ ] F1: Explain My Result — provenance template in GraphRAG response
 - [ ] F2: Query Presets — first 5 Cypher+NL templates (Saban tree, OC draft production, staff stability)
 - [ ] F3: Event Tracking — JSON lines logger in Streamlit
+- [ ] A1: Fix validate.py + anomaly_checks.py import paths; run full validation report
+
+**Done This Sprint:**
+- [x] 2026-03-25 — F4c: `ui/design_system/DESIGN_SYSTEM.md` — navy palette, role colors (HC gold, OC coral, DC blue, POS purple), typography, component rules, vis.js node specs
+- [x] 2026-03-25 — F4c: `ui/components/coaching_tree.html` — vis.js 4.21.0 three-panel layout (filters | hierarchical UD network | coach detail card), CDN loaded, role-based node styling, click-to-detail, hover tooltips, legend
+- [x] 2026-03-25 — F4c: `ui/components/graph_component.py` — `result_to_graph_data()` converts GraphRAGQueryResult → nodes/edges/meta JSON; `render_coaching_tree()` injects into template via `st.components.v1.html()`
+- [x] 2026-03-25 — F4c: `app/streamlit_app.py` — replaced Pyvis `render_graph()` with `render_coaching_tree(grag_result)` for TREE_QUERY intents; added sys.path guard for reliable module resolution
+- [x] 2026-03-25 — F4c: Fixed hierarchical layout bug — vis.js requires `level` property on nodes, not just `depth`. Added `"level": row.depth` to all node dicts and `level: n.level` in `buildVisNode()`.
+- [x] 2026-03-25 — 27 new tests in `tests/test_graph_component.py` (json_shape, role_colors, depth_filter, depth_maps_to_level, empty_result, helpers). 648/648 pass.
+
+**Done Previously:**
+- [x] 2026-03-24 — Rule 1 two-part fix in `infer_mentored_edges_v2()`: Part A (same-team HC during overlap) + Part B (global prior-HC before overlap_start). Suppression: 1,861 → 3,036.
+- [x] 2026-03-24 — Full MENTORED edge rebuild on Railway: 22,020 → 20,932 edges.
+- [x] 2026-03-24 — Cycle detection added to `get_head_coach_tree_summary()` in `graphrag/narratives.py` (post-query filter on all_rows and hc_rows). Fixes "Saban at depth 2" bug.
+- [x] 2026-03-24 — Deleted 2 bad inbound MENTORED edges to Saban (Kevin Steele, Kirby Smart) via `scripts/delete_saban_inbound_mentored.py`.
+- [x] 2026-03-24 — Verified clean Saban tree: 8 direct HC, 112 total HC, 2,070 total mentees (d1:33, d2:219, d3:685, d4:1133).
+- [x] 2026-03-24 — 3 new tests (2 cycle-detection in test_narratives.py, 1 Rule 1 Part A in test_mentored_dry_run.py). 556/556 pass.
+- [x] 2026-03-24 — `scripts/diagnose_rule1.py` + `scripts/delete_saban_inbound_mentored.py` written for audit/cleanup.
+
+**Done Previously:**
+- [ ] F1: Explain My Result — provenance template in GraphRAG response
 - [ ] A1: Data Validation Agent — ground_truth.yaml with Saban/Meyer/Fisher trees
 
 **Done This Sprint:**
@@ -83,6 +104,13 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 | 2026-03-22 | Two COACHED_AT edge flavors: season-level (`source="mcillece"`) + per-role (`source="mcillece_roles"`) | Season-level for coach history queries; per-role for coordinator/tier filtering. Both idempotent via MERGE. |
 | 2026-03-22 | TEAM_NAME_MAP in `expand_roles.py` (not `pull_mcillece_staff.py`) | Name normalization is a Neo4j-matching concern, belongs in the expansion layer not the parse layer |
 | 2026-03-22 | `AC` (Assistant Head Coach) classified as COORDINATOR tier | Senior administrative role; typically held by a coordinator who also carries AHC designation |
+| 2026-03-24 | Rule 1 prior-HC check is two-part: same-team HC during overlap (Part A) + global prior-HC before overlap_start (Part B) | Old single check `y < overlap_start` missed coaches who became HC the same year overlap began (Bielema, Swinney, Petersen, Sarkisian, Petrino cases). Part A catches any HC year at the same program during any overlap year. |
+| 2026-03-24 | Cycle detection post-query filter in `get_head_coach_tree_summary()` | `author_narrative_saban.py` calls this function, not `get_coaching_tree()`. Without filter, Saban appeared as his own mentee at depth 2 via a bad inbound edge. |
+| 2026-03-24 | Mike Locksley and Clay Helton remain in Saban tree legitimately | Locksley was OC before becoming HC (no same-team HC during Saban overlap). Helton was not yet HC during his Heyward overlap at USC. Rule 1 correctly does not fire for these. |
+| 2026-03-25 | Replace Pyvis with direct vis.js 4.21.0 CDN | Pyvis wraps vis.js but hides hierarchical layout control, node sizing, and click handlers. Direct vis.js gives full control over UD layout, role-based styling, and three-panel component. Same CDN dependency, zero new packages. |
+| 2026-03-25 | DESIGN_SYSTEM.md as pre-read for all UI sessions | Locks palette, role colors, typography, and component rules across Claude Code sessions. Prevents style drift. Tokens migrate directly to React CSS variables in Phase 4 (F11). |
+| 2026-03-25 | JSON inject (not postMessage) for vis.js data handoff | Python serializes GraphRAGQueryResult → JSON, replaces __GRAPH_DATA__ token in HTML template, passes to st.components.v1.html(). Zero extra infra for Phase 0-3. Swap to API call in Phase 4. |
+| 2026-03-25 | sys.path guard in streamlit_app.py | `Path(__file__).parent.parent` ensures project root is always on sys.path regardless of how Streamlit is invoked. Required after adding `ui/` as a sibling package to `app/`. |
 
 ---
 
@@ -90,7 +118,7 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 | Blocker | Impact | Status | Action |
 |---------|--------|--------|--------|
-| MENTORED edges not yet rebuilt from McIllece full dataset | Coaching tree queries still limited | Ready | Run `infer_mentored_pairs_mcillece()` + `load_mentored_edges_mcillece()` against loaded data |
+| ~~MENTORED edges not yet rebuilt from McIllece full dataset~~ | ~~Coaching tree queries still limited~~ | **RESOLVED 2026-03-24** | Rule 1 two-part fix + full rebuild complete. 20,932 edges on Railway. |
 
 ---
 
@@ -106,6 +134,9 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 | Date | What Was Built | Next Session |
 |------|---------------|--------------|
+| 2026-03-25 | Session 10: F4c vis.js coaching tree component built. Pyvis replaced with three-panel vis.js layout (DESIGN_SYSTEM.md, coaching_tree.html, graph_component.py). Hierarchical layout bug fixed (depth→level mapping). sys.path guard in streamlit_app.py. 648/648 tests. | Live verification with Neo4j, Saban tree screenshot (Phase 0 exit), richer node data (team/years/SP+) |
+| 2026-03-24 | Session 6: Rule 1 two-part prior-HC fix in `infer_mentored_edges_v2()`. Full MENTORED rebuild on Railway (22,020→20,932). Cycle detection in `get_head_coach_tree_summary()`. Deleted 2 bad Saban inbound edges. Clean Saban tree verified (8 direct HC, 112 total HC, 2,070 total). 553→556 tests. `diagnose_rule1.py` + `delete_saban_inbound_mentored.py`. | Write narratives/saban.txt → --save → Streamlit screenshot (Phase 0 exit) |
+| 2026-03-23 | Session 5: F4 complete (classifier, planner, executor, retry, synthesizer). F4b infrastructure: narratives.py, author_narrative_saban.py. Streamlit wired to F4 pipeline. A1 confidence_flag layer. role_constants.py. 553 tests. | MENTORED edge Rule 1 fix (prior-HC two-part check) |
 | 2026-03-22 | Session 3C: CFBD coverage audit. `expand_roles.py` + `run_mcillece_pipeline.py`. Full FBS 2005–2025 loaded: 4,216 coaches, 39,031 per-role COACHED_AT edges. TEAM_NAME_MAP fixes 9 mismatches (+2,356 edges). 144 tests. | Rebuild MENTORED edges from McIllece full dataset |
 | 2026-03-22 | Session 3B: McIllece ingestion + loader. `pull_mcillece_staff.py`, `load_staff.py`, role-priority MENTORED inference, 62 tests. Roadmap + new dirs scaffolded. | Load full FBS 2005–2025 McIllece dataset; rebuild MENTORED edges |
 | (Session 3) | Inferred and loaded 163 MENTORED edges from CFBD head-coach overlaps. 35 tests. | McIllece ingestion |

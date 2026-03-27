@@ -22,7 +22,7 @@ Portfolio project — code quality, testing, and documentation matter.
 | LLM | Google Gemini Python SDK (`gemini-2.0-flash`) |
 | Data Source | CFBD API (college football data) + McIllece CFB Coaches Database (CSV/XLSX) |
 | UI | Streamlit |
-| Graph Viz | Pyvis |
+| Graph Viz | vis.js 4.21.0 (CDN) — replaced Pyvis in Session 10 |
 | Testing | Pytest |
 | Linting | Ruff + Black |
 
@@ -89,10 +89,19 @@ cfb-graphrag/
 ├── scripts/
 │   └── author_narrative_saban.py  ← F4b authoring CLI (fetch summary → write → save to Neo4j)
 │
-├── app/
-│   ├── streamlit_app.py
+├── ui/
+│   ├── __init__.py
+│   ├── design_system/
+│   │   └── DESIGN_SYSTEM.md     ← palette, role colors, typography, vis.js node rules (read before UI work)
 │   └── components/
-│       └── graph_viz.py   ← Pyvis rendering
+│       ├── __init__.py
+│       ├── coaching_tree.html   ← vis.js template with __GRAPH_DATA__ token
+│       └── graph_component.py   ← Python wrapper: GraphRAGQueryResult → JSON → st.components.v1.html()
+│
+├── app/
+│   ├── streamlit_app.py         ← sys.path fix ensures project root is importable
+│   └── components/
+│       └── graph_viz.py         ← legacy Pyvis rendering (replaced by ui/components/)
 │
 ├── tests/
 │   ├── conftest.py
@@ -260,6 +269,7 @@ All normalization is done in `pipeline.py` before calling any loader function.
 - Tests mock `client.models.generate_content.return_value.text = "..."`
 - `retriever` tests patch `graphrag.retriever.extract_entities` and `graphrag.retriever.classify_intent` to isolate answer-generation logic
 - `graphrag/classifier.py` added in Session 4 — routes every NL query to one of 5 intent buckets before the planner generates Cypher
+- Gemini 2.5 Flash wraps JSON in markdown code fences (` ```json ... ``` `) even when instructed not to. Always parse Gemini JSON via `graphrag.utils.parse_gemini_json()` — never raw `json.loads()`.
 
 ## Running the Pipeline
 
@@ -286,7 +296,9 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 - F1 Explain My Result — provenance string on every query result
 - F2 Query Presets — 15–20 segment-specific Cypher+NL templates
 - F3 Event Tracking — JSON lines logging from day one
-- F4 Smart Query Planning — multi-step decomposition in S4 GraphRAG pipeline
+- F4 Smart Query Planning — DONE (multi-step decomposition in S4 GraphRAG pipeline)
+- F4b Precomputed Tree Narratives — DONE (top-10 coaching trees in Neo4j)
+- F4c vis.js Coaching Tree UI — BUILT (three-panel layout, role-based styling, hierarchical UD; screenshot pending)
 - A1 Data Validation Agent — ground truth checks + MENTORED confidence scoring
 
 **Phase 1 (months 1–4):**
@@ -358,4 +370,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 7 (2026-03-24) — Same-unit filter + deterministic tiebreaker loaded into Railway. Railway MENTORED: 20,932 → 14,219 unique pairs (14,937 per-team edges, 6,896 same-unit suppressed, 3,036 Rule 1 suppressed). _best_mentor_role() + _best_role_all() fixed with (priority, abbr) key — fully deterministic. F4b COMPLETE: all top-10 coach narratives written and saved to Neo4j. 601/601 tests pass. Next: Phase 0 exit — Saban tree screenshot via Streamlit.*
+*Last updated: Session 10 (2026-03-25) — Pyvis replaced with vis.js coaching tree component (F4c). Three-panel layout: left (depth slider, role filter, preset buttons), center (hierarchical UD vis.js Network), right (coach detail card on node click). DESIGN_SYSTEM.md locks navy palette + role colors + typography. graph_component.py converts GraphRAGQueryResult → __GRAPH_DATA__ JSON → st.components.v1.html(). Level mapping bug fixed (depth→level for vis.js hierarchical layout). sys.path guard added to streamlit_app.py. 648/648 tests pass. Phase 0 exit: Saban tree renders hierarchically with role-based node styling — screenshot pending.*
