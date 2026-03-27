@@ -69,20 +69,26 @@ def _node_id(coach_id: int | str | None, display_name: str) -> str:
     return f"cfbd_{_name_slug(display_name)}"
 
 
-def _infer_role(depth: int, root_role: str = "HC") -> str:
-    """Infer a display role for a node when no explicit role is provided.
+def _resolve_role(explicit_role: str | None, depth: int) -> str:
+    """Return the display role for a node.
 
-    The coaching tree query returns HC-lineage mentees by default, so all
-    nodes at any depth are assigned ``"HC"`` unless the caller overrides.
+    Uses the explicit role from the ``ResultRow`` when available.
+    Falls back to ``"HC"`` (the coaching-tree default) when no role
+    data has been piped through.
 
     Args:
+        explicit_role: Role abbreviation from ``ResultRow.role``
+            (e.g. ``"HC"``, ``"OC"``, ``"DC"``, ``"POS"``), or ``None``.
         depth: Hop distance from the root node (0 = root itself).
-        root_role: Role string for the root node (default ``"HC"``).
 
     Returns:
         Role string — one of ``"HC"``, ``"OC"``, ``"DC"``, ``"POS"``.
     """
-    return root_role if depth == 0 else "HC"
+    if depth == 0:
+        return "HC"
+    if explicit_role and explicit_role in ("HC", "OC", "DC", "POS"):
+        return explicit_role
+    return "HC"
 
 
 # ---------------------------------------------------------------------------
@@ -145,14 +151,9 @@ def result_to_graph_data(
         if r.depth <= max_depth
     ]
 
-    # Build a mapping from depth → list of node IDs to wire parent edges.
-    # For depth=1 all parents are the root; for depth>1 we use the nearest
-    # ancestor already added to the graph (first match by depth-1).
-    depth_to_ids: dict[int, list[str]] = {0: [root_id]}
-
     for row in filtered_rows:
         nid = _node_id(row.coach_id, row.display_name)
-        role = _infer_role(row.depth)
+        role = _resolve_role(row.role, row.depth)
 
         nodes.append(
             {
@@ -171,13 +172,14 @@ def result_to_graph_data(
             }
         )
 
-        # Wire edge to nearest ancestor at depth-1.
-        parent_depth = row.depth - 1
-        parent_ids = depth_to_ids.get(parent_depth, [root_id])
-        parent_id = parent_ids[0] if parent_ids else root_id
+        # Wire edge to the correct parent.
+        # - depth=1 → parent is always the root node.
+        # - depth>1 → use mentor_coach_id to find the actual mentor node.
+        if row.depth == 1 or row.mentor_coach_id is None:
+            parent_id = root_id
+        else:
+            parent_id = _node_id(row.mentor_coach_id, "")
         edges.append({"from": parent_id, "to": nid})
-
-        depth_to_ids.setdefault(row.depth, []).append(nid)
 
     # Compute meta.
     hc_mentees = sum(1 for n in nodes if n["depth"] == 1 and n["role"] == "HC")
@@ -236,4 +238,4 @@ def render_coaching_tree(result: "GraphRAGQueryResult") -> None:
     graph_json = json.dumps(graph_data, ensure_ascii=False)
     html = template_html.replace("__GRAPH_DATA__", graph_json)
 
-    st.components.v1.html(html, height=600, scrolling=False)
+    st.components.v1.html(html, height=850, scrolling=False)

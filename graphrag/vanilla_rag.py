@@ -79,7 +79,7 @@ def answer_question_vanilla(
     context = "\n".join(relevant_lines[:200]) if relevant_lines else "No relevant data found."
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=f"Question: {question}\n\nContext:\n{context}",
         config=types.GenerateContentConfig(system_instruction=_ANSWER_SYSTEM),
     )

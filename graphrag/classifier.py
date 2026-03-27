@@ -11,13 +11,14 @@ Intent buckets:
   SIMILARITY         — who is most similar to / shortest path between?
 """
 
-import json
 import logging
 import os
 from typing import Any
 
 from google import genai
 from google.genai import types
+
+from graphrag.utils import parse_gemini_json
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +72,13 @@ def classify_intent(
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=question,
             config=types.GenerateContentConfig(system_instruction=_CLASSIFY_SYSTEM),
         )
         raw = response.text.strip()
-        parsed: dict[str, Any] = json.loads(raw)
-    except (json.JSONDecodeError, Exception) as exc:
+        parsed: dict[str, Any] = parse_gemini_json(raw)
+    except (ValueError, Exception) as exc:
         logger.warning("Classifier failed (%s); defaulting to %s", exc, _FALLBACK_INTENT)
         return {"intent": _FALLBACK_INTENT, "confidence": 0.0}
 

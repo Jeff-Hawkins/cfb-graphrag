@@ -19,6 +19,7 @@ from ui.components.graph_component import (
     ROLE_COLORS,
     _name_slug,
     _node_id,
+    _resolve_role,
     result_to_graph_data,
 )
 
@@ -52,6 +53,7 @@ def _make_row(
     coach_id: int | None = None,
     explanation: str = "Test explanation.",
     confidence_flag: str | None = "STANDARD",
+    role: str | None = None,
 ) -> ResultRow:
     """Build a minimal ResultRow for testing."""
     return ResultRow(
@@ -60,6 +62,7 @@ def _make_row(
         depth=depth,
         explanation=explanation,
         confidence_flag=confidence_flag,
+        role=role,
     )
 
 
@@ -363,3 +366,95 @@ def test_node_id_without_coach_code():
 def test_node_id_string_coach_code():
     """String coach codes (e.g. legacy CFBD IDs) are formatted as mc_."""
     assert _node_id("abc123", "Some Coach") == "mc_abc123"
+
+
+# ---------------------------------------------------------------------------
+# _resolve_role
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_role_root_always_hc():
+    """Root node (depth=0) always returns HC regardless of explicit role."""
+    assert _resolve_role("OC", depth=0) == "HC"
+    assert _resolve_role(None, depth=0) == "HC"
+
+
+def test_resolve_role_uses_explicit_role():
+    """When an explicit role is provided for a non-root node, it is used."""
+    assert _resolve_role("OC", depth=1) == "OC"
+    assert _resolve_role("DC", depth=1) == "DC"
+    assert _resolve_role("POS", depth=2) == "POS"
+    assert _resolve_role("HC", depth=1) == "HC"
+
+
+def test_resolve_role_defaults_to_hc_when_none():
+    """When no explicit role is provided, non-root nodes default to HC."""
+    assert _resolve_role(None, depth=1) == "HC"
+    assert _resolve_role(None, depth=3) == "HC"
+
+
+def test_resolve_role_ignores_unexpected_values():
+    """Unexpected role strings fall back to HC."""
+    assert _resolve_role("QB", depth=1) == "HC"
+    assert _resolve_role("", depth=1) == "HC"
+
+
+# ---------------------------------------------------------------------------
+# Role passthrough from ResultRow to graph data
+# ---------------------------------------------------------------------------
+
+
+def test_role_passthrough_oc_node():
+    """OC role on ResultRow produces role='OC' on the graph node."""
+    result = _make_result(rows=[
+        _make_row("Steve Sarkisian", coach_id=500, role="OC"),
+    ])
+    data = result_to_graph_data(result)
+    mentee = next(n for n in data["nodes"] if n["depth"] == 1)
+    assert mentee["role"] == "OC"
+
+
+def test_role_passthrough_dc_node():
+    """DC role on ResultRow produces role='DC' on the graph node."""
+    result = _make_result(rows=[
+        _make_row("Kirby Smart", coach_id=501, role="DC"),
+    ])
+    data = result_to_graph_data(result)
+    mentee = next(n for n in data["nodes"] if n["depth"] == 1)
+    assert mentee["role"] == "DC"
+
+
+def test_role_passthrough_pos_node():
+    """POS role on ResultRow produces role='POS' on the graph node."""
+    result = _make_result(rows=[
+        _make_row("Burton Burns", coach_id=502, role="POS"),
+    ])
+    data = result_to_graph_data(result)
+    mentee = next(n for n in data["nodes"] if n["depth"] == 1)
+    assert mentee["role"] == "POS"
+
+
+def test_role_passthrough_none_defaults_to_hc():
+    """ResultRow with role=None produces role='HC' on the graph node (backward compat)."""
+    result = _make_result(rows=[
+        _make_row("Kirby Smart", coach_id=503, role=None),
+    ])
+    data = result_to_graph_data(result)
+    mentee = next(n for n in data["nodes"] if n["depth"] == 1)
+    assert mentee["role"] == "HC"
+
+
+def test_role_passthrough_mixed_roles():
+    """A tree with mixed roles renders each node with its correct role."""
+    result = _make_result(rows=[
+        _make_row("Kirby Smart", coach_id=100, role="HC"),
+        _make_row("Steve Sarkisian", coach_id=200, role="OC"),
+        _make_row("Jeremy Pruitt", coach_id=300, role="DC"),
+        _make_row("Burton Burns", coach_id=400, role="POS"),
+    ])
+    data = result_to_graph_data(result)
+    roles_by_label = {n["label"]: n["role"] for n in data["nodes"] if n["depth"] == 1}
+    assert roles_by_label["Kirby Smart"] == "HC"
+    assert roles_by_label["Steve Sarkisian"] == "OC"
+    assert roles_by_label["Jeremy Pruitt"] == "DC"
+    assert roles_by_label["Burton Burns"] == "POS"

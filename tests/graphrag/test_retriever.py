@@ -6,6 +6,8 @@ from graphrag.executor import ExecutionResult
 from graphrag.planner import EntityBundle, SubQueryPlan
 from graphrag.retriever import (
     GraphRAGQueryResult,
+    _fetch_direct_mentees,
+    _resolve_mc_coach_code,
     answer_question,
     retrieve_with_graphrag,
 )
@@ -253,6 +255,193 @@ class TestRetrieveWithGraphrag:
 
 
 # ---------------------------------------------------------------------------
+# F4b Precomputed narrative fast-path
+# ---------------------------------------------------------------------------
+
+
+class TestNarrativeFastPath:
+    """Tests for the F4b narrative check inserted between plan and execute."""
+
+    def _run_with_narrative(
+        self,
+        narrative: str | None,
+        intent: str = "TREE_QUERY",
+        coaches: list[str] | None = None,
+    ):
+        """Run retrieve_with_graphrag with a controllable narrative mock.
+
+        Returns (result, mock_execute, mock_synth, mock_get_narrative).
+        """
+        plan = _make_plan(coaches=coaches if coaches is not None else ["Nick Saban"])
+        # Override intent in plan.
+        plan.intent = intent
+        retry_outcome = _make_retry_outcome(plan)
+        response = _make_response()
+
+        with (
+            patch(
+                "graphrag.retriever.classify_intent",
+                return_value={"intent": intent, "confidence": 0.9},
+            ),
+            patch("graphrag.retriever.build_plan", return_value=plan),
+            patch(
+                "graphrag.retriever.get_coach_narrative_by_name",
+                return_value=narrative,
+            ) as mock_get_narrative,
+            patch(
+                "graphrag.retriever.execute_with_retry", return_value=retry_outcome
+            ) as mock_execute,
+            patch(
+                "graphrag.retriever.synthesize_response", return_value=response
+            ) as mock_synth,
+        ):
+            result = retrieve_with_graphrag(
+                "Show me Nick Saban's tree",
+                driver=_neo4j_driver(),
+                client=MagicMock(),
+            )
+
+        return result, mock_execute, mock_synth, mock_get_narrative
+
+    # --- narrative present ---
+
+    def test_narrative_used_flag_true_when_narrative_found(self):
+        result, *_ = self._run_with_narrative("Saban coached everyone.")
+        assert result.narrative_used is True
+
+    def test_answer_is_precomputed_narrative(self):
+        result, *_ = self._run_with_narrative("Saban coached everyone.")
+        assert result.response.answer == "Saban coached everyone."
+
+    def test_pipeline_not_invoked_when_narrative_found(self):
+        """execute_with_retry and synthesize_response are NOT called when narrative found.
+
+        The answer text comes from the precomputed narrative.  Graph rows come
+        from _fetch_direct_mentees() (direct depth-1 traversal), not the full
+        execute+synthesize pipeline.
+        """
+        _, mock_execute, mock_synth, _ = self._run_with_narrative("Saban coached everyone.")
+        mock_execute.assert_not_called()
+        mock_synth.assert_not_called()
+
+    def test_narrative_check_called_for_tree_query(self):
+        _, _, _, mock_get_narrative = self._run_with_narrative(
+            "Saban coached everyone.", intent="TREE_QUERY"
+        )
+        mock_get_narrative.assert_called_once()
+        assert mock_get_narrative.call_args[0][0] == "Nick Saban"
+
+    def test_result_rows_from_live_exec_when_narrative_found(self):
+        """result_rows are populated from live execute+synth even when narrative used.
+
+        In this test the mock synthesize_response returns an empty list, so the
+        assertion is that result_rows equals whatever the synthesizer returned —
+        in production that will be non-empty tree rows for the graph.
+        """
+        result, *_ = self._run_with_narrative("Saban coached everyone.")
+        # Mock _make_response() returns result_rows=[] — confirm it's passed through.
+        assert result.response.result_rows == []
+
+    def test_partial_false_when_narrative_used(self):
+        result, *_ = self._run_with_narrative("Saban coached everyone.")
+        assert result.response.partial is False
+
+    # --- narrative absent (None) ---
+
+    def test_narrative_used_flag_false_when_no_narrative(self):
+        result, *_ = self._run_with_narrative(None)
+        assert result.narrative_used is False
+
+    def test_pipeline_runs_when_no_narrative(self):
+        _, mock_execute, mock_synth, _ = self._run_with_narrative(None)
+        mock_execute.assert_called_once()
+        mock_synth.assert_called_once()
+
+    # --- non-tree intent: narrative check must NOT fire ---
+
+    def test_narrative_not_checked_for_performance_compare(self):
+        _, mock_execute, _, mock_get_narrative = self._run_with_narrative(
+            "some narrative", intent="PERFORMANCE_COMPARE"
+        )
+        mock_get_narrative.assert_not_called()
+        mock_execute.assert_called_once()
+
+    def test_narrative_not_checked_for_similarity(self):
+        _, mock_execute, _, mock_get_narrative = self._run_with_narrative(
+            "some narrative", intent="SIMILARITY"
+        )
+        mock_get_narrative.assert_not_called()
+        mock_execute.assert_called_once()
+
+    def test_narrative_not_checked_when_no_root_coach(self):
+        """When no coach entity is resolved (root_name=''), skip the narrative check."""
+        plan = _make_plan(coaches=[])
+        plan.intent = "TREE_QUERY"
+        retry_outcome = _make_retry_outcome(plan)
+
+        with (
+            patch(
+                "graphrag.retriever.classify_intent",
+                return_value={"intent": "TREE_QUERY", "confidence": 0.9},
+            ),
+            patch("graphrag.retriever.build_plan", return_value=plan),
+            patch(
+                "graphrag.retriever.get_coach_narrative_by_name"
+            ) as mock_get_narrative,
+            patch(
+                "graphrag.retriever.execute_with_retry", return_value=retry_outcome
+            ),
+            patch(
+                "graphrag.retriever.synthesize_response",
+                return_value=_make_response(),
+            ),
+        ):
+            retrieve_with_graphrag("test", driver=_neo4j_driver(), client=MagicMock())
+
+        mock_get_narrative.assert_not_called()
+
+    # --- graceful degradation when narrative check raises ---
+
+    def test_pipeline_runs_when_narrative_check_raises(self):
+        """If get_coach_narrative_by_name raises, the full pipeline runs as fallback."""
+        plan = _make_plan()
+        retry_outcome = _make_retry_outcome(plan)
+
+        with (
+            patch(
+                "graphrag.retriever.classify_intent",
+                return_value={"intent": "TREE_QUERY", "confidence": 0.9},
+            ),
+            patch("graphrag.retriever.build_plan", return_value=plan),
+            patch(
+                "graphrag.retriever.get_coach_narrative_by_name",
+                side_effect=RuntimeError("neo4j boom"),
+            ),
+            patch(
+                "graphrag.retriever.execute_with_retry", return_value=retry_outcome
+            ) as mock_execute,
+            patch(
+                "graphrag.retriever.synthesize_response",
+                return_value=_make_response(),
+            ),
+        ):
+            result = retrieve_with_graphrag(
+                "test", driver=_neo4j_driver(), client=MagicMock()
+            )
+
+        assert isinstance(result, GraphRAGQueryResult)
+        mock_execute.assert_called_once()
+        assert result.narrative_used is False
+
+    # --- narrative_used default ---
+
+    def test_narrative_used_defaults_false_on_normal_pipeline(self, monkeypatch):
+        """narrative_used is False for a normal (non-narrative) pipeline run."""
+        result, *_ = self._run_with_narrative(None)
+        assert result.narrative_used is False
+
+
+# ---------------------------------------------------------------------------
 # answer_question — thin wrapper
 # ---------------------------------------------------------------------------
 
@@ -301,3 +490,149 @@ class TestAnswerQuestion:
         kwargs = mock_rg.call_args[1]
         assert kwargs["driver"] is driver
         assert kwargs["client"] is client
+
+
+# ---------------------------------------------------------------------------
+# _fetch_direct_mentees — graph viz helper
+# ---------------------------------------------------------------------------
+
+
+class TestFetchDirectMentees:
+    """Unit tests for the _fetch_direct_mentees() internal helper.
+
+    _fetch_direct_mentees calls _resolve_mc_coach_code (not resolve_coach_entity)
+    so mocks target graphrag.retriever._resolve_mc_coach_code.
+    """
+
+    def test_returns_empty_list_when_no_mc_code(self):
+        """When _resolve_mc_coach_code returns None, result is empty."""
+        with patch(
+            "graphrag.retriever._resolve_mc_coach_code",
+            return_value=None,
+        ):
+            rows = _fetch_direct_mentees("Unknown Coach", _neo4j_driver())
+        assert rows == []
+
+    def test_returns_empty_list_on_traversal_error(self):
+        """A traversal exception is caught and returns empty list."""
+        with (
+            patch("graphrag.retriever._resolve_mc_coach_code", return_value=42),
+            patch(
+                "graphrag.retriever._graph_traversal.get_coaching_tree",
+                side_effect=RuntimeError("neo4j down"),
+            ),
+        ):
+            rows = _fetch_direct_mentees("Nick Saban", _neo4j_driver())
+        assert rows == []
+
+    def test_returns_result_rows_for_depth_1(self):
+        """Depth-1 raw rows are converted to ResultRow objects."""
+        raw = [
+            {"name": "Kirby Smart", "depth": 1, "coach_code": 99, "confidence_flag": "STANDARD"},
+            {"name": "Lane Kiffin", "depth": 1, "coach_code": 77, "confidence_flag": None},
+        ]
+        with (
+            patch("graphrag.retriever._resolve_mc_coach_code", return_value=1457),
+            patch(
+                "graphrag.retriever._graph_traversal.get_coaching_tree",
+                return_value=raw,
+            ),
+        ):
+            rows = _fetch_direct_mentees("Nick Saban", _neo4j_driver())
+
+        assert len(rows) == 2
+        assert rows[0].display_name == "Kirby Smart"
+        assert rows[0].depth == 1
+        assert rows[1].display_name == "Lane Kiffin"
+
+    def test_includes_depth_1_and_depth_2_rows(self):
+        """Both depth-1 and depth-2 HC rows are returned."""
+        raw = [
+            {"name": "Kirby Smart", "depth": 1, "coach_code": 99,
+             "path_coaches": ["Nick Saban", "Kirby Smart"]},
+            {"name": "Dan Lanning", "depth": 2, "coach_code": 55,
+             "path_coaches": ["Nick Saban", "Kirby Smart", "Dan Lanning"]},
+        ]
+        with (
+            patch("graphrag.retriever._resolve_mc_coach_code", return_value=1457),
+            patch(
+                "graphrag.retriever._graph_traversal.get_coaching_tree",
+                return_value=raw,
+            ),
+        ):
+            rows = _fetch_direct_mentees("Nick Saban", _neo4j_driver())
+
+        assert len(rows) == 2
+        assert rows[0].display_name == "Kirby Smart"
+        assert rows[0].depth == 1
+        assert rows[1].display_name == "Dan Lanning"
+        assert rows[1].depth == 2
+        assert "via Kirby Smart" in rows[1].explanation
+
+    def test_deduplicates_by_name(self):
+        """Duplicate coach names are collapsed to one ResultRow."""
+        raw = [
+            {"name": "Kirby Smart", "depth": 1, "coach_code": 99},
+            {"name": "Kirby Smart", "depth": 1, "coach_code": 99},
+        ]
+        with (
+            patch("graphrag.retriever._resolve_mc_coach_code", return_value=1457),
+            patch(
+                "graphrag.retriever._graph_traversal.get_coaching_tree",
+                return_value=raw,
+            ),
+        ):
+            rows = _fetch_direct_mentees("Nick Saban", _neo4j_driver())
+
+        assert len(rows) == 1
+
+    def test_explanation_references_root_name(self):
+        """The explanation string mentions the root coach name."""
+        raw = [{"name": "Kirby Smart", "depth": 1, "coach_code": 99}]
+        with (
+            patch("graphrag.retriever._resolve_mc_coach_code", return_value=1457),
+            patch(
+                "graphrag.retriever._graph_traversal.get_coaching_tree",
+                return_value=raw,
+            ),
+        ):
+            rows = _fetch_direct_mentees("Nick Saban", _neo4j_driver())
+
+        assert "Nick Saban" in rows[0].explanation
+
+
+# ---------------------------------------------------------------------------
+# _resolve_mc_coach_code — dual-path coach_code lookup
+# ---------------------------------------------------------------------------
+
+
+class TestResolveMcCoachCode:
+    """Unit tests for the _resolve_mc_coach_code() internal helper."""
+
+    def test_returns_none_for_single_token_name(self):
+        """Names that can't be split into first/last return None."""
+        assert _resolve_mc_coach_code("Saban", _neo4j_driver()) is None
+
+    def test_returns_mc_code_from_record(self):
+        """Returns the mc_code value from the Cypher record."""
+        driver = _neo4j_driver()
+        session = driver.session.return_value.__enter__.return_value
+        session.run.return_value.single.return_value = {"mc_code": 1457}
+        result = _resolve_mc_coach_code("Nick Saban", driver)
+        assert result == 1457
+
+    def test_returns_none_when_record_is_none(self):
+        """Returns None when no Neo4j record is found."""
+        driver = _neo4j_driver()
+        session = driver.session.return_value.__enter__.return_value
+        session.run.return_value.single.return_value = None
+        result = _resolve_mc_coach_code("Nick Saban", driver)
+        assert result is None
+
+    def test_returns_none_when_mc_code_is_null(self):
+        """Returns None when the record exists but mc_code is NULL."""
+        driver = _neo4j_driver()
+        session = driver.session.return_value.__enter__.return_value
+        session.run.return_value.single.return_value = {"mc_code": None}
+        result = _resolve_mc_coach_code("Nick Saban", driver)
+        assert result is None

@@ -27,7 +27,6 @@ Typical usage::
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -36,6 +35,8 @@ from typing import Any
 
 from google import genai
 from google.genai import types
+
+from graphrag.utils import parse_gemini_json
 
 logger = logging.getLogger(__name__)
 
@@ -434,13 +435,13 @@ def build_plan(
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(system_instruction=_PLANNER_SYSTEM),
         )
         raw = response.text.strip()
-        parsed: dict[str, Any] = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        parsed: dict[str, Any] = parse_gemini_json(raw)
+    except ValueError as exc:
         logger.warning("Planner: non-JSON response from Gemini (%s)", exc)
         return _fallback_plan(question, intent, confidence, str(exc))
     except Exception as exc:  # noqa: BLE001

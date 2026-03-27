@@ -3,7 +3,6 @@
 Uses Gemini to identify entity names so they can be matched against Neo4j nodes.
 """
 
-import json
 import logging
 import os
 from typing import Any
@@ -11,6 +10,8 @@ from typing import Any
 from google import genai
 from google.genai import types
 from neo4j import Driver
+
+from graphrag.utils import parse_gemini_json
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +49,15 @@ def extract_entities(
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=question,
         config=types.GenerateContentConfig(system_instruction=_SYSTEM_PROMPT),
     )
     raw = response.text.strip()
 
     try:
-        entities: dict[str, Any] = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        entities: dict[str, Any] = parse_gemini_json(raw)
+    except ValueError as exc:
         raise ValueError(f"Gemini returned non-JSON entity response: {raw!r}") from exc
 
     return {

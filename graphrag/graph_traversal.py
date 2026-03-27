@@ -90,48 +90,119 @@ def get_coaching_tree(
     Returns:
         List of dicts with keys:
 
-        - ``name``         — mentee's display name.
-        - ``coach_code``   — mentee's McIllece coach_code.
-        - ``depth``        — hop distance from root.
-        - ``path_coaches`` — list of coach names from root to this node
+        - ``name``            — mentee's display name.
+        - ``coach_code``      — mentee's McIllece coach_code.
+        - ``depth``           — hop distance from root.
+        - ``path_coaches``    — list of coach names from root to this node
           (feeds F1 provenance strings).
+        - ``confidence_flag`` — ``confidence_flag`` property of the last
+          MENTORED edge in the path (the direct mentor → mentee hop).
+          ``None`` when the property has not been set (pre-migration edges).
     """
     depth = max(1, min(int(max_depth), 4))
 
+    # Neo4j does not accept parameters in variable-length relationship ranges
+    # ([:MENTORED*1..$depth]), so the clamped depth is interpolated directly
+    # into the query string.  The value is safe: clamped to 1–4 above.
     if role_filter:
-        query = """
-        MATCH path = (root:Coach {coach_code: $coach_code})-[:MENTORED*1..$depth]->(mentee:Coach)
-        WHERE EXISTS {
+        query = f"""
+        MATCH path = (root:Coach {{coach_code: $coach_code}})-[:MENTORED*1..{depth}]->(mentee:Coach)
+        WHERE EXISTS {{
             MATCH (mentee)-[r:COACHED_AT]->(:Team)
             WHERE r.role_abbr = $role_filter AND r.source = 'mcillece_roles'
-        }
+        }}
         RETURN mentee.name          AS name,
                mentee.coach_code    AS coach_code,
                length(path)         AS depth,
                [n IN nodes(path) | coalesce(n.name, n.first_name + ' ' + n.last_name)]
-                   AS path_coaches
+                   AS path_coaches,
+               last(relationships(path)).confidence_flag AS confidence_flag
         ORDER BY depth, name
         """
         params: dict[str, Any] = {
             "coach_code": coach_code,
-            "depth": depth,
             "role_filter": role_filter,
         }
     else:
-        query = """
-        MATCH path = (root:Coach {coach_code: $coach_code})-[:MENTORED*1..$depth]->(mentee:Coach)
+        query = f"""
+        MATCH path = (root:Coach {{coach_code: $coach_code}})-[:MENTORED*1..{depth}]->(mentee:Coach)
         RETURN mentee.name          AS name,
                mentee.coach_code    AS coach_code,
                length(path)         AS depth,
                [n IN nodes(path) | coalesce(n.name, n.first_name + ' ' + n.last_name)]
-                   AS path_coaches
+                   AS path_coaches,
+               last(relationships(path)).confidence_flag AS confidence_flag
         ORDER BY depth, name
         """
-        params = {"coach_code": coach_code, "depth": depth}
+        params = {"coach_code": coach_code}
 
     with driver.session() as session:
         result = session.run(query, **params)
-        return [dict(record) for record in result]
+        rows = [dict(record) for record in result]
+
+    # Post-query cycle filter (Rule 4): exclude any row where the root coach
+    # appears as the mentee.  Cypher variable-length paths can traverse
+    # bidirectional MENTORED cycles back to the root (e.g. A→B→A at depth 2).
+    before = len(rows)
+    rows = [r for r in rows if r.get("coach_code") != coach_code]
+    suppressed = before - len(rows)
+    if suppressed:
+        logger.debug(
+            "get_coaching_tree: filtered %d self-referential path(s) for root coach_code=%d",
+            suppressed,
+            coach_code,
+        )
+
+    return rows
+
+
+def get_best_roles(
+    coach_codes: list[int],
+    driver: Driver,
+) -> dict[int, str]:
+    """Batch-fetch the highest-priority role for each coach.
+
+    Looks up ``mcillece_roles`` COACHED_AT edges and returns the most
+    senior role abbreviation per coach using the priority order
+    HC > OC > DC > everything else (mapped to ``"POS"``).
+
+    Args:
+        coach_codes: List of McIllece ``coach_code`` integers.
+        driver: Open Neo4j driver.
+
+    Returns:
+        Dict mapping ``coach_code`` → role abbreviation string
+        (``"HC"``, ``"OC"``, ``"DC"``, or ``"POS"``).  Coaches with
+        no ``mcillece_roles`` edges are omitted from the result.
+    """
+    if not coach_codes:
+        return {}
+
+    query = """
+    UNWIND $codes AS code
+    MATCH (c:Coach {coach_code: code})-[r:COACHED_AT]->(:Team)
+    WHERE r.source = 'mcillece_roles'
+    WITH c.coach_code AS cc, r.role_abbr AS ra,
+         CASE r.role_abbr
+           WHEN 'HC' THEN 1
+           WHEN 'OC' THEN 2
+           WHEN 'DC' THEN 3
+           ELSE 4
+         END AS priority
+    ORDER BY priority
+    WITH cc, head(collect(ra)) AS best_role
+    RETURN cc AS coach_code, best_role AS role
+    """
+    with driver.session() as session:
+        result = session.run(query, codes=coach_codes)
+        role_map: dict[int, str] = {}
+        for record in result:
+            role_abbr = record["role"]
+            # Collapse position-level roles to "POS" for UI display.
+            if role_abbr not in ("HC", "OC", "DC"):
+                role_abbr = "POS"
+            role_map[record["coach_code"]] = role_abbr
+        return role_map
 
 
 def shortest_path_between_coaches(

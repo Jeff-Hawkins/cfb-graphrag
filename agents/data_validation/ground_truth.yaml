@@ -1,0 +1,123 @@
+# ground_truth.yaml — Known coaching tenures and relationships for A1 validation.
+#
+# Each entry is a single verifiable fact about a coach's tenure or mentored
+# relationship.  validate.py checks each fact against the live Neo4j graph
+# and reports any discrepancies.
+#
+# Fields:
+#   type: "tenure" | "mentored" | "not_mentored"
+#   coach:       McIllece name or partial name (matched case-insensitively)
+#   team:        School name as it appears in Neo4j (Team.school)
+#   role:        Role abbreviation (HC, OC, DC, etc.)
+#   start_year:  First expected year for this tenure (inclusive)
+#   end_year:    Last expected year for this tenure (inclusive)
+#   mentor:      Name of the mentor coach (for "mentored" entries)
+#   mentee:      Name of the mentee coach (for "mentored" entries)
+#   rationale:   Human-readable justification for the expected result
+
+tenures:
+  - coach: "Kirby Smart"
+    team: "Alabama"
+    role: "DC"
+    start_year: 2008
+    end_year: 2015
+    rationale: "Smart was defensive coordinator at Alabama under Saban 2008-2015 before becoming HC at Georgia."
+
+  - coach: "Lane Kiffin"
+    team: "Alabama"
+    role: "OC"
+    start_year: 2014
+    end_year: 2016
+    rationale: "Kiffin was offensive coordinator at Alabama 2014-2016."
+
+  - coach: "Will Muschamp"
+    team: "Alabama"
+    start_year: 2016
+    end_year: 2017
+    rationale: "Muschamp joined Alabama as defensive coordinator / analyst 2016-2017 after his HC stint at Florida."
+
+  - coach: "Will Muschamp"
+    team: "Florida"
+    role: "HC"
+    start_year: 2011
+    end_year: 2014
+    rationale: "Muschamp was HC at Florida 2011-2014 before his South Carolina tenure."
+
+  - coach: "Will Muschamp"
+    team: "South Carolina"
+    role: "HC"
+    start_year: 2016
+    end_year: 2018
+    rationale: "Muschamp was HC at South Carolina 2016-2018."
+
+  - coach: "Nick Saban"
+    team: "Alabama"
+    role: "HC"
+    start_year: 2007
+    end_year: 2023
+    rationale: "Saban was HC at Alabama from 2007 through his retirement after 2023."
+
+  - coach: "Kirby Smart"
+    team: "Georgia"
+    role: "HC"
+    start_year: 2016
+    end_year: 2024
+    rationale: "Smart became HC at Georgia in 2016 and is still in the role."
+
+  - coach: "Billy Napier"
+    team: "Louisiana"
+    role: "HC"
+    start_year: 2018
+    end_year: 2021
+    rationale: "Napier was HC at Louisiana (ULL) 2018-2021 before moving to Florida."
+
+  - coach: "Jeremy Pruitt"
+    team: "Tennessee"
+    role: "HC"
+    start_year: 2018
+    end_year: 2020
+    rationale: "Pruitt was HC at Tennessee 2018-2020."
+
+  - coach: "Jim McElwain"
+    team: "Florida"
+    role: "HC"
+    start_year: 2015
+    end_year: 2017
+    rationale: "McElwain was HC at Florida 2015-2017."
+
+  - coach: "Curt Cignetti"
+    team: "Indiana"
+    role: "HC"
+    start_year: 2023
+    end_year: 2024
+    rationale: "Cignetti became HC at Indiana in 2023."
+
+mentored:
+  - mentor: "Nick Saban"
+    mentee: "Kirby Smart"
+    rationale: "Smart was Saban's DC at Alabama for 8 seasons (2008-2015). Core Saban tree relationship."
+
+  - mentor: "Nick Saban"
+    mentee: "Jim McElwain"
+    rationale: "McElwain was Saban's OC at Alabama 2008-2011."
+
+  - mentor: "Nick Saban"
+    mentee: "Billy Napier"
+    rationale: "Napier coached under Saban at Alabama as WRs coach 2013-2017."
+
+  - mentor: "Nick Saban"
+    mentee: "Jeremy Pruitt"
+    rationale: "Pruitt coached under Saban as DC at Alabama 2016-2017."
+
+  - mentor: "Kirby Smart"
+    mentee: "Dan Lanning"
+    rationale: "Lanning was DC under Smart at Georgia before becoming HC at Oregon."
+
+not_mentored:
+  - mentor: "Kirby Smart"
+    mentee: "Will Muschamp"
+    rationale: "Muschamp was HC at Florida (2011-2014) and South Carolina (2016-2018) before joining Smart's staff. Rule 1 (Prior HC) suppresses this edge — they are career peers, not mentor/mentee."
+
+  - mentor: "Lane Kiffin"
+    mentee: "Nick Saban"
+    rationale: "Kiffin was OC under Saban, not the other way. No reverse edge should exist."
