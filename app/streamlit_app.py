@@ -8,10 +8,12 @@ import logging
 import os
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
-from app.components.graph_viz import render_graph
+from ui.components.graph_component import render_coaching_tree
 from graphrag.retriever import GraphRAGQueryResult, retrieve_with_graphrag
 from graphrag.vanilla_rag import answer_question_vanilla
 
@@ -58,13 +60,6 @@ _PRESETS: list[tuple[str, str]] = [
     ),
 ]
 
-# Depth → node colour for tree visualisation.
-_DEPTH_COLORS: dict[int, str] = {
-    1: "#4e9af1",
-    2: "#7ec8a6",
-    3: "#c8a67e",
-    4: "#c87ea6",
-}
 
 # ---------------------------------------------------------------------------
 # Session state — query input
@@ -72,6 +67,16 @@ _DEPTH_COLORS: dict[int, str] = {
 
 if "query_input" not in st.session_state:
     st.session_state.query_input = ""
+
+if "pending_query" not in st.session_state:
+    st.session_state.pending_query = ""
+
+# Transfer any pending preset value into the text-input default *before* the
+# widget is instantiated.  Writing to query_input after the widget renders
+# raises StreamlitAPIException.
+if st.session_state.pending_query:
+    st.session_state.query_input = st.session_state.pending_query
+    st.session_state.pending_query = ""
 
 # ---------------------------------------------------------------------------
 # Layout
@@ -129,30 +134,17 @@ if question:
                 with st.expander(f"**{row.display_name}**", expanded=True):
                     st.caption(row.explanation)
 
-        # Coaching-tree graph visualisation (depth > 0 rows = tree results).
-        tree_rows = [r for r in response.result_rows if r.depth > 0]
-        if tree_rows and grag_result.root_name:
+        # Coaching-tree graph visualisation (vis.js F4c component).
+        logger.info(
+            "Graph viz: intent=%s narrative_used=%s result_rows=%d root=%r",
+            grag_result.intent,
+            grag_result.narrative_used,
+            len(response.result_rows),
+            grag_result.root_name,
+        )
+        if grag_result.intent == "TREE_QUERY" and grag_result.root_name:
             st.subheader("Coaching tree")
-            nodes: list[dict] = [
-                {
-                    "id": 0,
-                    "label": grag_result.root_name,
-                    "color": "#e07b39",
-                    "title": "Root coach",
-                }
-            ]
-            edges: list[dict] = []
-            for idx, row in enumerate(tree_rows, start=1):
-                nodes.append(
-                    {
-                        "id": idx,
-                        "label": row.display_name,
-                        "color": _DEPTH_COLORS.get(row.depth, "#aaaaaa"),
-                        "title": row.explanation,
-                    }
-                )
-                edges.append({"source": 0, "target": idx, "label": ""})
-            render_graph(nodes, edges)
+            render_coaching_tree(grag_result)
 
         # Pipeline warnings / retry metadata (collapsed, non-intrusive).
         if response.warnings:
@@ -171,5 +163,5 @@ with st.sidebar:
     st.header("Preset queries")
     for label, query_text in _PRESETS:
         if st.button(label, use_container_width=True):
-            st.session_state.query_input = query_text
+            st.session_state.pending_query = query_text
             st.rerun()

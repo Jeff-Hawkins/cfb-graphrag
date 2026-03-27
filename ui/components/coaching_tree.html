@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coaching Tree</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- vis.js 4.21.0 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+
+  <style>
+    /* ── Reset & base ────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:    #0F1729;
+      --navy2:   #162035;
+      --navy3:   #1E2D4A;
+      --navy4:   #253558;
+      --card:    #182038;
+      --card2:   #1E2A45;
+      --accent:  #4F8EF7;
+      --accent2: #E8503A;
+      --green:   #34C97B;
+      --text:    #FFFFFF;
+      --text2:   #A8B8D8;
+      --text3:   #5C7099;
+      --border:  rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.12);
+    }
+
+    html, body {
+      height: 580px;
+      overflow: hidden;
+      background: var(--navy);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+    }
+
+    /* ── Three-panel layout ──────────────────────────────────────────── */
+    #app {
+      display: flex;
+      height: 580px;
+      background: var(--navy);
+    }
+
+    /* Left panel */
+    #panel-left {
+      width: 200px;
+      flex-shrink: 0;
+      background: var(--navy2);
+      border-right: 1px solid var(--border);
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    /* Center canvas */
+    #panel-center {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #network-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Right panel */
+    #panel-right {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--navy2);
+      border-left: 1px solid var(--border);
+      padding: 16px 12px;
+      overflow-y: auto;
+    }
+
+    /* ── Left panel controls ─────────────────────────────────────────── */
+    .control-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .control-group { display: flex; flex-direction: column; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--navy3);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    #depth-val {
+      font-size: 11px;
+      color: var(--text2);
+      margin-top: 4px;
+      text-align: right;
+    }
+
+    select {
+      background: var(--navy3);
+      color: var(--text);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+    }
+    select:hover { background: var(--navy4); }
+
+    .preset-btn {
+      background: var(--navy3);
+      color: var(--text2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.12s, color 0.12s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .preset-btn:hover {
+      background: var(--navy4);
+      color: var(--text);
+    }
+    .preset-btn .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    /* Meta row at bottom of left panel */
+    #meta-row {
+      margin-top: auto;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text3);
+      line-height: 1.6;
+    }
+    #meta-row strong { color: var(--text2); }
+
+    /* ── Right panel — coach detail ──────────────────────────────────── */
+    #detail-empty {
+      color: var(--text3);
+      font-size: 12px;
+      margin-top: 8px;
+      line-height: 1.6;
+    }
+
+    #detail-content { display: none; }
+
+    .detail-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.1;
+      margin-bottom: 8px;
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+
+    .detail-section {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .detail-meta-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text2);
+      margin-bottom: 4px;
+    }
+    .detail-meta-row span:first-child { color: var(--text3); }
+
+    .stat-card {
+      background: var(--navy3);
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .stat-card .stat-label {
+      font-size: 10px;
+      color: var(--text3);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .stat-card .stat-value {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--green);
+    }
+    .stat-card .stat-value.negative { color: var(--accent2); }
+
+    .explain-block {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: var(--card2);
+      border-radius: 8px;
+      border-left: 2px solid var(--accent);
+      font-size: 11px;
+      color: var(--text2);
+      line-height: 1.55;
+    }
+    .explain-block .explain-title {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+
+    .flag-warning {
+      margin-top: 8px;
+      padding: 5px 8px;
+      background: rgba(232,80,58,0.12);
+      border-radius: 6px;
+      border: 1px solid rgba(232,80,58,0.25);
+      font-size: 10px;
+      color: var(--accent2);
+    }
+
+    /* ── vis.js tooltip override ─────────────────────────────────────── */
+    .vis-tooltip {
+      background: var(--card) !important;
+      border: 1px solid var(--border2) !important;
+      border-radius: 8px !important;
+      color: var(--text) !important;
+      font-family: 'Inter', sans-serif !important;
+      font-size: 12px !important;
+      padding: 8px 10px !important;
+      max-width: 180px !important;
+      pointer-events: none !important;
+    }
+
+    /* Legend in top-right of center panel */
+    #legend {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(15,23,41,0.85);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 10px;
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: var(--text3);
+    }
+    .legend-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Panel header */
+    .panel-header {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Left panel ──────────────────────────────────────────────────── -->
+  <div id="panel-left">
+    <div class="control-group">
+      <div class="panel-header">Filters</div>
+      <div class="control-label">Depth</div>
+      <input type="range" id="depth-slider" min="1" max="4" value="4"
+             oninput="onDepthChange(this.value)" />
+      <div id="depth-val">Showing depth 1 – 4</div>
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">Role</div>
+      <select id="role-filter" onchange="onRoleFilter(this.value)">
+        <option value="all">All roles</option>
+        <option value="HC">HC — Head Coach</option>
+        <option value="OC">OC — Off. Coord.</option>
+        <option value="DC">DC — Def. Coord.</option>
+        <option value="POS">POS — Position</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">Presets</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="preset-btn" onclick="firePreset('saban')">
+          <span class="dot"></span>Nick Saban
+        </button>
+        <button class="preset-btn" onclick="firePreset('meyer')">
+          <span class="dot"></span>Urban Meyer
+        </button>
+        <button class="preset-btn" onclick="firePreset('smart')">
+          <span class="dot"></span>Kirby Smart
+        </button>
+      </div>
+    </div>
+
+    <div id="meta-row"></div>
+  </div>
+
+  <!-- ── Center canvas ───────────────────────────────────────────────── -->
+  <div id="panel-center">
+    <div id="network-canvas"></div>
+    <div id="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#F5C842;border:1px solid #C49A1A"></div>HC
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#E8503A;border:1px solid #B83020"></div>OC
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#4F8EF7;border:1px solid #2060C0"></div>DC
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#A78BFA;border:1px solid #7050CC"></div>POS
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right panel ─────────────────────────────────────────────────── -->
+  <div id="panel-right">
+    <div class="panel-header">Coach Detail</div>
+    <div id="detail-empty">Click a node to see coach details.</div>
+    <div id="detail-content">
+      <div class="detail-name" id="d-name"></div>
+      <div id="d-badge" class="role-badge"></div>
+
+      <div class="detail-section">
+        <div class="detail-meta-row">
+          <span>Team</span><span id="d-team">—</span>
+        </div>
+        <div class="detail-meta-row">
+          <span>Years</span><span id="d-years">—</span>
+        </div>
+        <div class="detail-meta-row">
+          <span>Depth</span><span id="d-depth">—</span>
+        </div>
+      </div>
+
+      <div id="d-spplus-wrap" class="stat-card" style="display:none">
+        <div>
+          <div class="stat-label">SP+</div>
+          <div class="stat-label" id="d-spplus-sub" style="margin-top:2px"></div>
+        </div>
+        <div class="stat-value" id="d-spplus"></div>
+      </div>
+
+      <div id="d-mentees-wrap" style="display:none">
+        <div class="detail-section">
+          <div class="detail-meta-row">
+            <span>Mentees</span><span id="d-mentees"></span>
+          </div>
+          <div class="detail-meta-row" id="d-picks-row" style="display:none">
+            <span>Draft picks</span><span id="d-picks"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="d-explain-wrap" class="explain-block" style="display:none">
+        <div class="explain-title">Why included</div>
+        <div id="d-explain"></div>
+      </div>
+
+      <div id="d-flag-wrap" class="flag-warning" style="display:none">
+        ⚠ Relationship direction flagged for review
+      </div>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script>
+// ── Graph data injected by Python ────────────────────────────────────────────
+const GRAPH_DATA = __GRAPH_DATA__;
+
+// ── Design system constants ──────────────────────────────────────────────────
+const ROLE_STYLES = {
+  HC:  { bg: '#F5C842', border: '#C49A1A', font: '#0F1729' },
+  OC:  { bg: '#E8503A', border: '#B83020', font: '#FFFFFF' },
+  DC:  { bg: '#4F8EF7', border: '#2060C0', font: '#FFFFFF' },
+  POS: { bg: '#A78BFA', border: '#7050CC', font: '#FFFFFF' },
+};
+const DEFAULT_STYLE = ROLE_STYLES.HC;
+
+// ── State ────────────────────────────────────────────────────────────────────
+let network = null;
+let allNodes = [];
+let allEdges = [];
+let currentDepth = 4;
+let currentRole = 'all';
+
+// ── Node builder ─────────────────────────────────────────────────────────────
+function buildVisNode(n) {
+  const role = n.role || 'HC';
+  const style = ROLE_STYLES[role] || DEFAULT_STYLE;
+
+  let shape = 'ellipse';
+  let size  = 13;
+  let bw    = 1;
+  let fontSize = 11;
+
+  if (n.depth === 0) {
+    shape = 'box'; size = 32; bw = 2.5; fontSize = 13;
+  } else if (role === 'HC') {
+    shape = 'ellipse'; size = 22;
+  } else if (role === 'OC' || role === 'DC') {
+    shape = 'ellipse'; size = 17;
+  }
+
+  const teamYears = [n.team, n.years].filter(Boolean).join(' · ');
+  const tooltip = `<b>${n.label}</b><br/>${role}${teamYears ? '<br/>' + teamYears : ''}`;
+
+  return {
+    id: n.id,
+    label: n.label,
+    shape,
+    size,
+    borderWidth: bw,
+    color: { background: style.bg, border: style.border,
+             highlight: { background: style.bg, border: style.border } },
+    font: { color: style.font, size: fontSize, face: 'Inter', bold: n.depth === 0 },
+    title: tooltip,
+    // raw data stored for detail panel
+    _data: n,
+  };
+}
+
+// ── Edge builder ─────────────────────────────────────────────────────────────
+function buildVisEdge(e) {
+  return {
+    from: e.from,
+    to: e.to,
+    color: { color: 'rgba(168,184,216,0.15)', highlight: 'rgba(168,184,216,0.4)' },
+    width: 1.5,
+    smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 },
+    arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+  };
+}
+
+// ── Network init ─────────────────────────────────────────────────────────────
+function initNetwork() {
+  allNodes = GRAPH_DATA.nodes || [];
+  allEdges = GRAPH_DATA.edges || [];
+
+  renderMeta();
+  buildGraph(currentDepth, currentRole);
+}
+
+function buildGraph(maxDepth, roleFilter) {
+  const visibleNodes = allNodes.filter(n => {
+    if (n.depth > maxDepth) return false;
+    if (roleFilter !== 'all' && n.depth > 0 && n.role !== roleFilter) return false;
+    return true;
+  });
+
+  const visibleIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = allEdges.filter(e => visibleIds.has(e.from) && visibleIds.has(e.to));
+
+  const nodeDataSet = new vis.DataSet(visibleNodes.map(buildVisNode));
+  const edgeDataSet = new vis.DataSet(visibleEdges.map(buildVisEdge));
+
+  const container = document.getElementById('network-canvas');
+
+  const options = {
+    layout: {
+      hierarchical: {
+        enabled: true,
+        direction: 'UD',
+        levelSeparation: 95,
+        nodeSpacing: 85,
+        treeSpacing: 200,
+        sortMethod: 'directed',
+      },
+    },
+    physics: { enabled: false },
+    interaction: {
+      hover: true,
+      tooltipDelay: 250,
+      zoomView: true,
+      dragView: true,
+    },
+    nodes: {
+      margin: { top: 4, right: 8, bottom: 4, left: 8 },
+    },
+    edges: {
+      selectionWidth: 2,
+    },
+  };
+
+  if (network) {
+    network.setData({ nodes: nodeDataSet, edges: edgeDataSet });
+  } else {
+    network = new vis.Network(container, { nodes: nodeDataSet, edges: edgeDataSet }, options);
+
+    network.on('click', function(params) {
+      if (params.nodes.length > 0) {
+        const nodeId = params.nodes[0];
+        const raw = allNodes.find(n => n.id === nodeId);
+        if (raw) showDetail(raw);
+      }
+    });
+
+    network.on('hoverNode', function() {
+      container.style.cursor = 'pointer';
+    });
+    network.on('blurNode', function() {
+      container.style.cursor = 'default';
+    });
+  }
+}
+
+// ── Meta row ─────────────────────────────────────────────────────────────────
+function renderMeta() {
+  const meta = GRAPH_DATA.meta || {};
+  const el = document.getElementById('meta-row');
+  const parts = [];
+  if (meta.root_name)   parts.push(`<strong>${meta.root_name}</strong>`);
+  if (meta.total_nodes) parts.push(`${meta.total_nodes} coaches`);
+  if (meta.hc_mentees)  parts.push(`${meta.hc_mentees} HC mentees`);
+  el.innerHTML = parts.join('<br/>');
+}
+
+// ── Detail panel ─────────────────────────────────────────────────────────────
+const BADGE_STYLES = {
+  HC:  'background:#F5C842;color:#0F1729',
+  OC:  'background:#E8503A;color:#FFFFFF',
+  DC:  'background:#4F8EF7;color:#FFFFFF',
+  POS: 'background:#A78BFA;color:#FFFFFF',
+};
+
+function showDetail(n) {
+  document.getElementById('detail-empty').style.display = 'none';
+  const content = document.getElementById('detail-content');
+  content.style.display = 'block';
+
+  document.getElementById('d-name').textContent = n.label || '';
+
+  const role = n.role || 'HC';
+  const badge = document.getElementById('d-badge');
+  badge.textContent = role;
+  badge.setAttribute('style', (BADGE_STYLES[role] || BADGE_STYLES.HC));
+
+  document.getElementById('d-team').textContent  = n.team  || '—';
+  document.getElementById('d-years').textContent = n.years || '—';
+  document.getElementById('d-depth').textContent = n.depth === 0 ? 'Root' : `Depth ${n.depth}`;
+
+  // SP+
+  const spWrap = document.getElementById('d-spplus-wrap');
+  if (n.sp_plus != null) {
+    spWrap.style.display = 'flex';
+    const valEl = document.getElementById('d-spplus');
+    valEl.textContent = (n.sp_plus > 0 ? '+' : '') + n.sp_plus.toFixed(1);
+    valEl.className = 'stat-value' + (n.sp_plus < 0 ? ' negative' : '');
+    document.getElementById('d-spplus-sub').textContent = n.team || '';
+  } else {
+    spWrap.style.display = 'none';
+  }
+
+  // Mentee count
+  const menteesWrap = document.getElementById('d-mentees-wrap');
+  if (n.mentee_count != null) {
+    menteesWrap.style.display = 'block';
+    document.getElementById('d-mentees').textContent = n.mentee_count;
+    const picksRow = document.getElementById('d-picks-row');
+    if (n.draft_picks != null) {
+      picksRow.style.display = 'flex';
+      document.getElementById('d-picks').textContent = n.draft_picks;
+    } else {
+      picksRow.style.display = 'none';
+    }
+  } else {
+    menteesWrap.style.display = 'none';
+  }
+
+  // Explain
+  const explainWrap = document.getElementById('d-explain-wrap');
+  if (n.explain) {
+    explainWrap.style.display = 'block';
+    document.getElementById('d-explain').textContent = n.explain;
+  } else {
+    explainWrap.style.display = 'none';
+  }
+
+  // Confidence flag
+  const flagWrap = document.getElementById('d-flag-wrap');
+  const isFlagged = n.confidence_flag &&
+                    n.confidence_flag !== 'STANDARD' &&
+                    n.confidence_flag !== null;
+  flagWrap.style.display = isFlagged ? 'block' : 'none';
+}
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+function onDepthChange(val) {
+  currentDepth = parseInt(val, 10);
+  document.getElementById('depth-val').textContent =
+    currentDepth === 1 ? 'Direct mentees only' : `Showing depth 1 – ${currentDepth}`;
+  buildGraph(currentDepth, currentRole);
+}
+
+function onRoleFilter(val) {
+  currentRole = val;
+  buildGraph(currentDepth, currentRole);
+}
+
+function firePreset(name) {
+  window.parent.postMessage({ type: 'preset', name }, '*');
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', initNetwork);
+</script>
+</body>
+</html>
