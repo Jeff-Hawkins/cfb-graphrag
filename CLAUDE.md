@@ -298,7 +298,7 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 - F3 Event Tracking — JSON lines logging from day one
 - F4 Smart Query Planning — DONE (multi-step decomposition in S4 GraphRAG pipeline)
 - F4b Precomputed Tree Narratives — DONE (top-10 coaching trees in Neo4j)
-- F4c vis.js Coaching Tree UI — BUILT (three-panel layout, role-based styling, hierarchical UD; screenshot pending)
+- F4c vis.js Coaching Tree UI — DONE (full CFB IQ site UI: navy shell, branded top nav, stats bar, graph front and center; screenshot taken Session 12)
 - A1 Data Validation Agent — ground truth checks + MENTORED confidence scoring
 
 **Phase 1 (months 1–4):**
@@ -341,6 +341,7 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 **Tracking files (in repo):**
 - `CLAUDE.md` — project context for Claude Code (read first, always)
 - `docs/ROADMAP_FEATURES.md` — full feature & agent specs with implementation notes
+- `docs/COACHING_SEMANTIC_MODEL.md` — entity/relationship definitions, semantic vocabulary, data contracts
 - `docs/STATUS.md` — weekly sprint tracking, phase exit criteria, decisions log
 
 ---
@@ -370,4 +371,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 11 (2026-03-26) — Role data pipeline: `role` + `mentor_coach_id` on ResultRow, `get_best_roles()` batch Cypher, `_resolve_role()` uses actual role from Neo4j. Depth-2 HC tree with correct edge wiring and orphan filtering. Gemini 2.5-flash upgrade + `parse_gemini_json()`. Component height 580→830px. All previously untracked Session 5–10 files committed. 663/663 tests pass. Phase 0 exit criteria changed: full CFB IQ site UI rebuild matching mockup (not just Saban screenshot). Next: full-width layout, top nav, stats row, Streamlit shell styling, team/years/SP+ node data.*
+*Last updated: Session 12 (2026-03-28) — Full CFB IQ site UI complete: navy Streamlit shell (CSS injection hiding all chrome), "CFB IQ" branded top nav with tab bar (Coaching Trees active, 4 placeholder tabs), stats bar in vis.js center panel (coach name · HC mentees · total coaches from meta), mode toggle moved to sidebar, results expanders removed (graph front and center), full-width query input. 663/663 tests pass. Phase 0 exit criteria met for F4c. Next: F2 query presets (5 YAML templates + sidebar wiring), F3 event tracking (JSON lines logger), F1 explain strings (semantic vocabulary mapping), A1 validation suite finish.*

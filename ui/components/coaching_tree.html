@@ -71,11 +71,6 @@
       overflow: hidden;
     }
 
-    #network-canvas {
-      width: 100%;
-      height: 100%;
-    }
-
     /* Right panel */
     #panel-right {
       width: 220px;
@@ -285,10 +280,64 @@
       pointer-events: none !important;
     }
 
+    /* ── Stats bar ───────────────────────────────────────────────────── */
+    #stats-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      background: rgba(15,23,41,0.92);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+      font-family: 'Inter', sans-serif;
+    }
+    #stats-coach-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+    .stats-sep {
+      color: var(--text3);
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .stats-stat {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .stats-count {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      color: #F5C842;
+    }
+    .stats-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* Network canvas sits below stats bar */
+    #network-canvas {
+      position: absolute;
+      top: 36px;
+      left: 0; right: 0; bottom: 0;
+    }
+
     /* Legend in top-right of center panel */
     #legend {
       position: absolute;
-      top: 8px;
+      top: 44px;
       right: 8px;
       background: rgba(15,23,41,0.85);
       border: 1px solid var(--border);
@@ -368,6 +417,20 @@
 
   <!-- ── Center canvas ───────────────────────────────────────────────── -->
   <div id="panel-center">
+    <!-- Stats bar: coach name · HC mentees · total count -->
+    <div id="stats-bar">
+      <div id="stats-coach-name"></div>
+      <div class="stats-sep">·</div>
+      <div class="stats-stat">
+        <span class="stats-count" id="stats-hc">—</span>
+        <span class="stats-label">HC Mentees</span>
+      </div>
+      <div class="stats-sep">·</div>
+      <div class="stats-stat">
+        <span class="stats-count" id="stats-total">—</span>
+        <span class="stats-label">Total Coaches</span>
+      </div>
+    </div>
     <div id="network-canvas"></div>
     <div id="legend">
       <div class="legend-item">
@@ -578,15 +641,25 @@ function buildGraph(maxDepth, roleFilter) {
   }
 }
 
-// ── Meta row ─────────────────────────────────────────────────────────────────
+// ── Meta row + stats bar ─────────────────────────────────────────────────────
 function renderMeta() {
   const meta = GRAPH_DATA.meta || {};
+
+  // Left panel meta row
   const el = document.getElementById('meta-row');
   const parts = [];
   if (meta.root_name)   parts.push(`<strong>${meta.root_name}</strong>`);
   if (meta.total_nodes) parts.push(`${meta.total_nodes} coaches`);
   if (meta.hc_mentees)  parts.push(`${meta.hc_mentees} HC mentees`);
   el.innerHTML = parts.join('<br/>');
+
+  // Stats bar
+  const nameEl  = document.getElementById('stats-coach-name');
+  const hcEl    = document.getElementById('stats-hc');
+  const totalEl = document.getElementById('stats-total');
+  if (nameEl)  nameEl.textContent  = meta.root_name   || '';
+  if (hcEl)    hcEl.textContent    = meta.hc_mentees  != null ? meta.hc_mentees  : '—';
+  if (totalEl) totalEl.textContent = meta.total_nodes != null ? meta.total_nodes : '—';
 }
 
 // ── Detail panel ─────────────────────────────────────────────────────────────

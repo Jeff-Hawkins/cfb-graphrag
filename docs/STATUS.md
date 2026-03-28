@@ -7,18 +7,19 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 ## Current Phase: 0 — Core Build
 
-### Active Sprint (week of 2026-03-25)
+### Active Sprint (week of 2026-03-28)
 
 **In Progress:**
-- [ ] F4c: Full-site UI rebuild — match CFB IQ mockup (top nav, stats row, full-width layout, Streamlit shell styling)
-- [ ] F4c: Populate richer node data (team, years, SP+) from graph traversal when available
-- [ ] F2: Query Presets — first 5 Cypher+NL templates (Saban tree, OC draft production, staff stability)
+- [ ] F2: Query Presets — first 5 Cypher+NL YAML templates (Saban tree, SEC DCs, OC hire grades, staff stability, Smart→Riley path)
+- [ ] F3: Event Tracking — JSON lines logger in Streamlit
 
 **Up Next:**
-- [ ] F3: Event Tracking — JSON lines logger in Streamlit
-- [ ] A1: Fix validate.py + anomaly_checks.py import paths; run full validation report
+- [ ] F1: Explain My Result — map raw role abbrs to semantic names (OC → "Offensive Coordinator") in explanation strings
+- [ ] A1: ground_truth.yaml, validate.py, anomaly_checks.py — finish contract validation suite
 
 **Done This Sprint:**
+- [x] 2026-03-28 — F4c DONE: Full CFB IQ site UI complete. `page_title="CFB IQ"`. CSS injection hides all Streamlit chrome, sets navy shell. "CFB IQ" branded top nav with gold diamond logo + tab bar (Coaching Trees active/gold underline, 4 placeholder tabs). Stats bar in vis.js center panel (coach name · HC mentees · total coaches from `GRAPH_DATA.meta`). Mode toggle moved to sidebar. Results expanders removed — graph front and center. Full-width query input. 663/663 tests pass.
+- [x] 2026-03-27 — Docs: `docs/COACHING_SEMANTIC_MODEL.md` created. F1/F2/F4 reframed as semantic query layer in roadmap. A1 formalized with semantic data contracts. F3 extended with review thresholds.
 - [x] 2026-03-26 — F4c: Role data pipeline — `role` + `mentor_coach_id` fields added to ResultRow. `get_best_roles()` batch Cypher lookup (HC > OC > DC > POS priority). `_resolve_role()` uses actual role from Neo4j instead of defaulting all nodes to HC.
 - [x] 2026-03-26 — F4c: Depth-2 HC tree — `_fetch_direct_mentees()` now fetches depth 1–2 with `role_filter="HC"`. Correct edge wiring via `mentor_coach_id`. Orphaned depth-2 nodes (mentor not in depth-1 set) filtered out.
 - [x] 2026-03-26 — F4c: Component height 580→830px for better screenshots.
@@ -70,8 +71,8 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 - [ ] F2 has 10+ working presets across at least 3 segments
 - [ ] F3 event tracking logging every query
 - [ ] A1 validation report runs clean on known ground truth
-- [ ] Full CFB IQ site UI matches mockup (top nav, stats row, full-width graph, Streamlit shell styling)
-- [ ] **Site screenshot exists showing the complete redesigned UI. Phase 1 does not start without it.**
+- [x] Full CFB IQ site UI matches mockup (top nav, stats row, full-width graph, Streamlit shell styling) — **DONE 2026-03-28**
+- [x] **Site screenshot taken showing the complete redesigned UI — DONE 2026-03-28**
 
 ### Phase 1 → Phase 2
 - [ ] 4+ content posts published per month for 2+ consecutive months
@@ -119,6 +120,9 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 | 2026-03-26 | Batch role lookup via `get_best_roles()` rather than enriching Cypher tree query | Keeps the variable-length path query simple; role lookup is a separate O(1) batch call. Cleaner separation of concerns. |
 | 2026-03-26 | HC role_filter + orphan filtering for depth-2 tree | Cypher `role_filter` only checks leaf nodes, not intermediates. Depth-2 mentees whose depth-1 mentor is non-HC (filtered out) would render as orphans. Post-query filter removes them. |
 | 2026-03-26 | Phase 0 exit = full site UI rebuild, not just Saban screenshot | User wants the complete CFB IQ site matching the mockup before sharing. Individual tree screenshot is no longer the gate. |
+| 2026-03-28 | Remove results expanders — graph is the primary output | User confirmed on seeing the redesigned UI. LLM narrative + graph are sufficient; per-coach expander list adds clutter and obscures the visualization. |
+| 2026-03-28 | CSS injection via `st.markdown(unsafe_allow_html=True)` for shell styling | No new dependencies. `@import` loads Google Fonts. Hides Streamlit chrome. `.block-container` padding zeroed so nav bar runs full-width. |
+| 2026-03-28 | Stats bar absolute-positioned in vis.js panel-center (36px) | Python already puts `hc_mentees` and `total_nodes` in `GRAPH_DATA.meta`; JS reads them in `renderMeta()`. No Python-side changes needed. |
 | 2026-03-26 | Gemini 2.5-flash replaces 2.0-flash | Better JSON compliance, faster, same cost tier. `parse_gemini_json()` handles markdown-fenced responses from 2.5. |
 
 ---
@@ -143,6 +147,7 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 | Date | What Was Built | Next Session |
 |------|---------------|--------------|
+| 2026-03-28 | Session 12: Full CFB IQ site UI — navy CSS injection, "CFB IQ" branded top nav + tab bar (Coaching Trees active/gold, 4 placeholder tabs), stats bar in vis.js center panel (coach name · HC mentees · total coaches from meta), mode toggle to sidebar, results expanders removed (graph front and center), full-width query input. `page_title="CFB IQ"`. Docs: COACHING_SEMANTIC_MODEL.md, semantic vocabulary pass on F1/F2/F3/F4/A1. F4c marked DONE. 663/663 tests. | F2 presets (5 YAML templates + sidebar wiring). F3 JSON lines logger. |
 | 2026-03-26 | Session 11: Role data pipeline — `role` + `mentor_coach_id` on ResultRow, `get_best_roles()` batch Cypher, `_resolve_role()`. Depth-2 HC tree with correct edge wiring and orphan filtering. Gemini 2.5-flash upgrade + `parse_gemini_json()`. Component height bump (580→830px). All untracked Session 5–10 files committed. 663/663 tests. | Full-site UI rebuild to match CFB IQ mockup (top nav, stats row, full-width layout, Streamlit shell CSS). Populate team/years/SP+ in node data. |
 | 2026-03-25 | Session 10: F4c vis.js coaching tree component built. Pyvis replaced with three-panel vis.js layout (DESIGN_SYSTEM.md, coaching_tree.html, graph_component.py). Hierarchical layout bug fixed (depth→level mapping). sys.path guard in streamlit_app.py. 648/648 tests. | Live verification with Neo4j, Saban tree screenshot (Phase 0 exit), richer node data (team/years/SP+) |
 | 2026-03-24 | Session 6: Rule 1 two-part prior-HC fix in `infer_mentored_edges_v2()`. Full MENTORED rebuild on Railway (22,020→20,932). Cycle detection in `get_head_coach_tree_summary()`. Deleted 2 bad Saban inbound edges. Clean Saban tree verified (8 direct HC, 112 total HC, 2,070 total). 553→556 tests. `diagnose_rule1.py` + `delete_saban_inbound_mentored.py`. | Write narratives/saban.txt → --save → Streamlit screenshot (Phase 0 exit) |
