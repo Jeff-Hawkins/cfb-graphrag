@@ -98,7 +98,7 @@ def check_mentored_bidirectional_cycles(driver: Driver) -> list[dict[str, Any]]:
     """
     query = """
     MATCH (a:Coach)-[:MENTORED]->(b:Coach)-[:MENTORED]->(a)
-    WHERE id(a) < id(b)
+    WHERE elementId(a) < elementId(b)
     RETURN
         a.coach_code AS coach_a_code, a.name AS coach_a_name,
         b.coach_code AS coach_b_code, b.name AS coach_b_name

@@ -31,12 +31,6 @@ tenures:
     rationale: "Kiffin was offensive coordinator at Alabama 2014-2016."
 
   - coach: "Will Muschamp"
-    team: "Alabama"
-    start_year: 2016
-    end_year: 2017
-    rationale: "Muschamp joined Alabama as defensive coordinator / analyst 2016-2017 after his HC stint at Florida."
-
-  - coach: "Will Muschamp"
     team: "Florida"
     role: "HC"
     start_year: 2011
@@ -47,8 +41,15 @@ tenures:
     team: "South Carolina"
     role: "HC"
     start_year: 2016
-    end_year: 2018
-    rationale: "Muschamp was HC at South Carolina 2016-2018."
+    end_year: 2020
+    rationale: "Muschamp was HC at South Carolina 2016-2020."
+
+  - coach: "Will Muschamp"
+    team: "Auburn"
+    role: "DC"
+    start_year: 2015
+    end_year: 2015
+    rationale: "Muschamp was DC at Auburn in 2015 after his HC stint at Florida."
 
   - coach: "Nick Saban"
     team: "Alabama"

@@ -462,7 +462,7 @@ class TestSynthesizerConfidenceFlag:
             "confidence_flag": "REVIEW_REVERSE",
         }
         explanation = _explain_coaching_tree_row(row, "Lincoln Riley")
-        assert "HC at Oklahoma" in explanation
+        assert "Head Coach at Oklahoma" in explanation
         assert "coached under Lincoln Riley" in explanation
         assert "[relationship direction flagged for review]" in explanation
 
