@@ -1,0 +1,13 @@
+id: coaching_tree
+name: Coaching Tree
+description: "Explore the depth-1 and depth-2 HC mentee tree for any head coach."
+segment: General
+result_type: tree
+
+parameters:
+  - name: coach_name
+    label: Coach Name
+    type: text
+    default: "Nick Saban"
+
+nl_prompt: "Show me {coach_name}'s coaching tree"

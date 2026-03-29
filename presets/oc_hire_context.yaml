@@ -1,0 +1,37 @@
+id: oc_hire_context
+name: OC Hire Context
+description: "Offensive coordinators at conference schools in a given season — prior OC experience and mentor lineage."
+segment: Agents/ADs
+result_type: table
+
+parameters:
+  - name: conference
+    label: Conference
+    type: select
+    options: ["SEC", "Big Ten", "ACC", "Big 12", "Pac-12", "American Athletic"]
+    default: "SEC"
+  - name: season
+    label: Season
+    type: number
+    default: 2024
+
+cypher_template: |
+  MATCH (c:Coach)-[r:COACHED_AT]->(t:Team)-[:IN_CONFERENCE]->(conf:Conference {name: $conference})
+  WHERE r.source = 'mcillece_roles' AND r.role_abbr = 'OC' AND r.year = $season
+  OPTIONAL MATCH (mentor:Coach)-[:MENTORED]->(c)
+  OPTIONAL MATCH (c)-[prev:COACHED_AT]->(:Team)
+  WHERE prev.source = 'mcillece_roles' AND prev.role_abbr = 'OC' AND prev.year < $season
+  WITH c, t, mentor, count(DISTINCT prev.year) AS prior_oc_seasons
+  RETURN c.name AS coach_name,
+         t.school AS team,
+         prior_oc_seasons,
+         mentor.name AS mentor_name
+  ORDER BY t.school
+
+columns:
+  - {key: coach_name, label: Coach}
+  - {key: team, label: Team}
+  - {key: prior_oc_seasons, label: Prior OC Seasons}
+  - {key: mentor_name, label: Mentor}
+
+answer_template: "{count} offensive coordinators found in {conference} ({season} season)."

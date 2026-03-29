@@ -14,15 +14,20 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import time
+import uuid
+
 import streamlit as st
 
 logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
+from analytics.tracker import log_event
 from ui.components.graph_component import render_coaching_tree
 from graphrag.retriever import GraphRAGQueryResult, retrieve_with_graphrag
 from graphrag.vanilla_rag import answer_question_vanilla
+from presets.runner import PresetResult, load_presets, run_preset
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -215,34 +220,20 @@ def _get_driver():
 
 
 # ---------------------------------------------------------------------------
-# Preset queries (Phase 0 demo paths)
+# Session state
 # ---------------------------------------------------------------------------
 
-_PRESETS: list[tuple[str, str]] = [
-    (
-        "Saban coaching tree",
-        "Show me Nick Saban's coaching tree of current head coaches",
-    ),
-    (
-        "SEC + Big Ten coaches",
-        "Which coaches worked in both the SEC and Big Ten?",
-    ),
-    (
-        "Smart → Riley path",
-        "What is the shortest path between Kirby Smart and Lincoln Riley?",
-    ),
-]
-
-
-# ---------------------------------------------------------------------------
-# Session state — query input
-# ---------------------------------------------------------------------------
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
 
 if "query_input" not in st.session_state:
     st.session_state.query_input = ""
 
 if "pending_query" not in st.session_state:
     st.session_state.pending_query = ""
+
+if "preset_result" not in st.session_state:
+    st.session_state.preset_result = None
 
 # Transfer any pending preset value into the text-input default *before* the
 # widget is instantiated.  Writing to query_input after the widget renders
@@ -251,22 +242,79 @@ if st.session_state.pending_query:
     st.session_state.query_input = st.session_state.pending_query
     st.session_state.pending_query = ""
 
+
+@st.cache_data
+def _load_presets() -> list[dict]:
+    """Load and cache preset YAML files."""
+    return load_presets()
+
+
 # ---------------------------------------------------------------------------
-# Sidebar: mode toggle + preset queries
+# Sidebar: mode toggle + F2 preset panel
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
     mode = st.radio("Mode", ["GraphRAG", "Vanilla RAG (baseline)"], index=0)
     st.divider()
+
+    # ── F2 preset panel ───────────────────────────────────────────────────
     st.markdown(
         "<div style='font-size:11px;font-weight:600;letter-spacing:0.08em;"
         "text-transform:uppercase;color:#5C7099;margin-bottom:8px;'>Presets</div>",
         unsafe_allow_html=True,
     )
-    for label, query_text in _PRESETS:
-        if st.button(label, use_container_width=True):
-            st.session_state.pending_query = query_text
-            st.rerun()
+
+    all_presets = _load_presets()
+    segments = ["All"] + sorted({p["segment"] for p in all_presets})
+    selected_segment = st.selectbox("Segment", segments, label_visibility="collapsed")
+
+    filtered_presets = [
+        p for p in all_presets
+        if selected_segment == "All" or p["segment"] == selected_segment
+    ]
+    preset_names = [p["name"] for p in filtered_presets]
+    selected_name = st.selectbox("Preset", preset_names, label_visibility="collapsed")
+    selected_preset = filtered_presets[preset_names.index(selected_name)]
+
+    # Render parameter inputs for the selected preset.
+    preset_params: dict = {}
+    for param in selected_preset.get("parameters", []):
+        ptype = param.get("type", "text")
+        label = param["label"]
+        default = param.get("default", "")
+        if ptype == "text":
+            preset_params[param["name"]] = st.text_input(label, value=str(default))
+        elif ptype == "number":
+            preset_params[param["name"]] = int(
+                st.number_input(label, value=int(default), step=1, format="%d")
+            )
+        elif ptype == "select":
+            options: list = param.get("options", [])
+            idx = options.index(default) if default in options else 0
+            preset_params[param["name"]] = st.selectbox(label, options, index=idx)
+
+    if st.button("Run Preset", use_container_width=True):
+        driver = _get_driver()
+        with st.spinner("Running preset…"):
+            _t0 = time.monotonic()
+            _pr = run_preset(selected_preset, preset_params, driver)
+            _duration_ms = int((time.monotonic() - _t0) * 1000)
+            st.session_state.preset_result = _pr
+        log_event(
+            query_text=selected_preset.get("name", selected_name),
+            query_type="preset",
+            preset_id=selected_preset.get("id"),
+            segment=selected_segment,
+            result_count=len(_pr.rows) if _pr.result_type == "table" else (
+                len(_pr.grag_result.response.result_rows) if _pr.grag_result else 0
+            ),
+            failure=bool(_pr.error),
+            duration_ms=_duration_ms,
+            session_id=st.session_state.session_id,
+        )
+        # Clear any freeform query result so preset output takes center stage.
+        st.session_state.query_input = ""
+        st.rerun()
 
 # ---------------------------------------------------------------------------
 # Query input (full-width, below nav)
@@ -285,11 +333,42 @@ st.markdown("</div>", unsafe_allow_html=True)
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Query handling
+# Preset result rendering
+# ---------------------------------------------------------------------------
+
+if st.session_state.preset_result is not None:
+    pr: PresetResult = st.session_state.preset_result
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+
+    if pr.error:
+        st.error(pr.error)
+    elif pr.result_type == "tree" and pr.grag_result is not None:
+        st.markdown(pr.grag_result.response.answer)
+        render_coaching_tree(pr.grag_result)
+    elif pr.result_type == "table":
+        if pr.answer:
+            st.markdown(pr.answer)
+        if pr.rows:
+            import pandas as pd  # noqa: PLC0415
+            display_cols = {c["key"]: c["label"] for c in pr.columns} if pr.columns else {}
+            df = pd.DataFrame(pr.rows)
+            if display_cols:
+                df = df[[c for c in display_cols if c in df.columns]]
+                df = df.rename(columns=display_cols)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("No results returned for this preset.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# Freeform query handling
 # ---------------------------------------------------------------------------
 
 if question:
+    st.session_state.preset_result = None
     with st.spinner("Thinking…"):
+        _freeform_t0 = time.monotonic()
         try:
             if mode == "GraphRAG":
                 driver = _get_driver()
@@ -299,8 +378,33 @@ if question:
             else:
                 vanilla_text: str = answer_question_vanilla(question)
         except Exception as exc:
+            _freeform_duration_ms = int((time.monotonic() - _freeform_t0) * 1000)
+            log_event(
+                query_text=question,
+                query_type="freeform",
+                segment=mode,
+                result_count=0,
+                failure=True,
+                duration_ms=_freeform_duration_ms,
+                session_id=st.session_state.session_id,
+            )
             st.error(f"Error: {exc}")
             st.stop()
+        _freeform_duration_ms = int((time.monotonic() - _freeform_t0) * 1000)
+    _freeform_result_count = (
+        len(grag_result.response.result_rows)
+        if mode == "GraphRAG"
+        else 0
+    )
+    log_event(
+        query_text=question,
+        query_type="freeform",
+        segment=mode,
+        result_count=_freeform_result_count,
+        failure=False,
+        duration_ms=_freeform_duration_ms,
+        session_id=st.session_state.session_id,
+    )
 
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 

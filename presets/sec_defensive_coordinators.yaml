@@ -1,0 +1,29 @@
+id: sec_defensive_coordinators
+name: Conference Defensive Coordinators
+description: "All defensive coordinators at schools in a given conference and season."
+segment: Media
+result_type: table
+
+parameters:
+  - name: conference
+    label: Conference
+    type: select
+    options: ["SEC", "Big Ten", "ACC", "Big 12", "Pac-12", "American Athletic"]
+    default: "SEC"
+  - name: season
+    label: Season
+    type: number
+    default: 2024
+
+cypher_template: |
+  MATCH (c:Coach)-[r:COACHED_AT]->(t:Team)-[:IN_CONFERENCE]->(conf:Conference {name: $conference})
+  WHERE r.source = 'mcillece_roles' AND r.role_abbr = 'DC' AND r.year = $season
+  RETURN c.name AS coach_name, t.school AS team, r.year AS season
+  ORDER BY t.school
+
+columns:
+  - {key: coach_name, label: Coach}
+  - {key: team, label: Team}
+  - {key: season, label: Season}
+
+answer_template: "{count} defensive coordinators found in {conference} ({season} season)."

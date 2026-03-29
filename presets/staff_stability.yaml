@@ -1,0 +1,47 @@
+id: staff_stability
+name: Staff Stability Index
+description: "Year-over-year staff retention rate for every school in a conference — how many coaches returned vs. were new hires."
+segment: Media
+result_type: table
+
+parameters:
+  - name: conference
+    label: Conference
+    type: select
+    options: ["SEC", "Big Ten", "ACC", "Big 12", "Pac-12", "American Athletic"]
+    default: "SEC"
+  - name: season
+    label: Season
+    type: number
+    default: 2024
+
+# prev_season is computed as season - 1 in the runner before executing Cypher.
+computed_params:
+  - name: prev_season
+    expr: "season - 1"
+
+cypher_template: |
+  MATCH (t:Team)-[:IN_CONFERENCE]->(conf:Conference {name: $conference})
+  MATCH (c:Coach)-[r:COACHED_AT]->(t)
+  WHERE r.source = 'mcillece_roles' AND r.year IN [$season, $prev_season]
+  WITH t, c, collect(r.year) AS years
+  WITH t,
+       sum(CASE WHEN $season IN years AND $prev_season IN years THEN 1 ELSE 0 END) AS returning,
+       sum(CASE WHEN $season IN years AND NOT $prev_season IN years THEN 1 ELSE 0 END) AS new_hires,
+       sum(CASE WHEN $prev_season IN years THEN 1 ELSE 0 END) AS prior_staff
+  WHERE prior_staff > 0
+  RETURN t.school AS team,
+         prior_staff,
+         returning,
+         new_hires,
+         round(100.0 * returning / prior_staff) AS retention_pct
+  ORDER BY retention_pct DESC
+
+columns:
+  - {key: team, label: Team}
+  - {key: prior_staff, label: Prior Year Staff}
+  - {key: returning, label: Returning}
+  - {key: new_hires, label: New Hires}
+  - {key: retention_pct, label: Retention %}
+
+answer_template: "Staff stability for {conference} schools, {prev_season}→{season} offseason ({count} teams)."

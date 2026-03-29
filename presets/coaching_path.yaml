@@ -1,0 +1,33 @@
+id: coaching_path
+name: Coaching Connection Path
+description: "Shortest mentorship path between any two coaches in the graph."
+segment: General
+result_type: table
+
+parameters:
+  - name: coach_a
+    label: Coach A
+    type: text
+    default: "Kirby Smart"
+  - name: coach_b
+    label: Coach B
+    type: text
+    default: "Lincoln Riley"
+
+cypher_template: |
+  MATCH (a:Coach {name: $coach_a}), (b:Coach {name: $coach_b})
+  MATCH path = shortestPath((a)-[:MENTORED*..8]-(b))
+  WITH [n IN nodes(path) | n.name] AS coaches, length(path) AS hops
+  RETURN coaches[0] AS from_coach,
+         coaches[-1] AS to_coach,
+         hops,
+         reduce(s = '', n IN coaches | CASE WHEN s = '' THEN n ELSE s + ' → ' + n END) AS connection_path
+  LIMIT 1
+
+columns:
+  - {key: from_coach, label: From}
+  - {key: to_coach, label: To}
+  - {key: hops, label: Hops}
+  - {key: connection_path, label: Connection Path}
+
+answer_template: "Shortest path between {coach_a} and {coach_b}."
