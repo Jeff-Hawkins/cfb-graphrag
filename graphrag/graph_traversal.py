@@ -205,6 +205,105 @@ def get_best_roles(
         return role_map
 
 
+def get_mentee_stints(
+    mentee_mentor_pairs: list[tuple[int, int]],
+    driver: Driver,
+) -> dict[int, dict[str, Any]]:
+    """Batch-fetch the coaching stint context for each mentee-mentor pair.
+
+    For each (mentee_code, mentor_code) pair, finds the team where both
+    coaches had overlapping ``mcillece`` COACHED_AT edges and returns the
+    mentee's highest-priority role at that team during the overlap, plus
+    the year range.
+
+    Args:
+        mentee_mentor_pairs: List of ``(mentee_coach_code, mentor_coach_code)``
+            tuples.
+        driver: Open Neo4j driver.
+
+    Returns:
+        Dict mapping ``mentee_coach_code`` → dict with keys:
+
+        - ``role_abbr`` — highest-priority role abbreviation at the overlap
+          team (HC > OC > DC > others).
+        - ``team`` — school name where the overlap occurred.
+        - ``start_year`` — first overlapping season year.
+        - ``end_year`` — last overlapping season year.
+
+        Mentees with no overlapping stints are omitted.
+    """
+    if not mentee_mentor_pairs:
+        return {}
+
+    pairs_param = [
+        {"mentee": m, "mentor": p} for m, p in mentee_mentor_pairs
+    ]
+
+    query = """
+    UNWIND $pairs AS pair
+    MATCH (mentor:Coach {coach_code: pair.mentor})-[rm:COACHED_AT]->(t:Team)
+          <-[rp:COACHED_AT]-(mentee:Coach {coach_code: pair.mentee})
+    WHERE rm.source = 'mcillece' AND rp.source = 'mcillece'
+      AND rm.year = rp.year
+    WITH mentee.coach_code AS mentee_code, t.school AS team,
+         collect(DISTINCT rp.year) AS overlap_years
+    WHERE size(overlap_years) > 0
+    WITH mentee_code, team, overlap_years,
+         reduce(mn = 9999, y IN overlap_years | CASE WHEN y < mn THEN y ELSE mn END) AS start_year,
+         reduce(mx = 0, y IN overlap_years | CASE WHEN y > mx THEN y ELSE mx END) AS end_year
+    ORDER BY mentee_code, size(overlap_years) DESC
+    WITH mentee_code, head(collect({team: team, start_year: start_year, end_year: end_year})) AS best
+    RETURN mentee_code, best.team AS team, best.start_year AS start_year, best.end_year AS end_year
+    """
+
+    # Second query: get the mentee's best role at the overlap team.
+    role_query = """
+    UNWIND $stints AS s
+    MATCH (c:Coach {coach_code: s.mentee_code})-[r:COACHED_AT]->(t:Team {school: s.team})
+    WHERE r.source = 'mcillece_roles'
+      AND r.year >= s.start_year AND r.year <= s.end_year
+    WITH c.coach_code AS cc, r.role_abbr AS ra,
+         CASE r.role_abbr
+           WHEN 'HC' THEN 1
+           WHEN 'OC' THEN 2
+           WHEN 'DC' THEN 3
+           ELSE 4
+         END AS priority
+    ORDER BY priority
+    WITH cc, head(collect(ra)) AS best_role
+    RETURN cc AS mentee_code, best_role AS role_abbr
+    """
+
+    with driver.session() as session:
+        result = session.run(query, pairs=pairs_param)
+        stints: dict[int, dict[str, Any]] = {}
+        stint_params: list[dict[str, Any]] = []
+        for record in result:
+            mc = record["mentee_code"]
+            stints[mc] = {
+                "team": record["team"],
+                "start_year": record["start_year"],
+                "end_year": record["end_year"],
+                "role_abbr": None,
+            }
+            stint_params.append({
+                "mentee_code": mc,
+                "team": record["team"],
+                "start_year": record["start_year"],
+                "end_year": record["end_year"],
+            })
+
+        # Enrich with role if we got stint data.
+        if stint_params:
+            role_result = session.run(role_query, stints=stint_params)
+            for record in role_result:
+                mc = record["mentee_code"]
+                if mc in stints:
+                    stints[mc]["role_abbr"] = record["role_abbr"]
+
+    return stints
+
+
 def shortest_path_between_coaches(
     driver: Driver, coach_a: str, coach_b: str
 ) -> list[dict[str, Any]]:

@@ -567,7 +567,7 @@ class TestFetchDirectMentees:
         assert rows[0].depth == 1
         assert rows[1].display_name == "Dan Lanning"
         assert rows[1].depth == 2
-        assert "via Kirby Smart" in rows[1].explanation
+        assert "Kirby Smart" in rows[1].explanation
 
     def test_deduplicates_by_name(self):
         """Duplicate coach names are collapsed to one ResultRow."""

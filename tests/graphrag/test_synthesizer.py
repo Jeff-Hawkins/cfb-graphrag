@@ -139,7 +139,7 @@ class TestExplainCoachingTreeRowEnriched:
     """Tests for _explain_coaching_tree_row with COACHED_AT metadata present."""
 
     def test_full_metadata_produces_rich_format(self):
-        """Complete role/team/years → roadmap target format."""
+        """Complete role/team/years → roadmap target format with semantic role name."""
         row = {
             "depth": 1,
             "path_coaches": ["Nick Saban", "Kirby Smart"],
@@ -150,7 +150,7 @@ class TestExplainCoachingTreeRowEnriched:
         }
         explanation = _explain_coaching_tree_row(row, "Nick Saban")
         assert explanation.startswith("Included because:")
-        assert "OC at Alabama" in explanation
+        assert "Offensive Coordinator at Alabama" in explanation
         assert "(2019–22)" in explanation
         assert "coached under Nick Saban" in explanation
 
@@ -195,7 +195,7 @@ class TestExplainCoachingTreeRowEnriched:
             "team": "Alabama",
         }
         explanation = _explain_coaching_tree_row(row, "Nick Saban")
-        assert "DC at Alabama" in explanation
+        assert "Defensive Coordinator at Alabama" in explanation
         assert "coached under Nick Saban" in explanation
         assert "(" not in explanation
 
@@ -225,14 +225,14 @@ class TestExplainCoachingTreeRowEnriched:
         assert "coached under Nick Saban" in explanation
 
     def test_role_only_no_team(self):
-        """role present but team absent → role-only prefix."""
+        """role present but team absent → semantic role name only."""
         row = {
             "depth": 1,
             "path_coaches": ["Nick Saban", "Kirby Smart"],
             "role": "OC",
         }
         explanation = _explain_coaching_tree_row(row, "Nick Saban")
-        assert "OC" in explanation
+        assert "Offensive Coordinator" in explanation
         assert "coached under Nick Saban" in explanation
 
     def test_no_coached_at_fields_falls_back_to_depth_format(self):

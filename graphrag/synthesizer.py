@@ -31,6 +31,7 @@ from typing import Any
 
 from graphrag.executor import ExecutionResult
 from graphrag.planner import SubQueryPlan, TraversalFn
+from graphrag.utils import role_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,11 @@ class ResultRow:
             the tree (the node one hop closer to the root).  Used by
             the graph component to wire edges to the correct parent.
             ``None`` for depth-1 nodes (parent is always the root).
+        team: School name where the coaching stint occurred (e.g.
+            ``"Alabama"``).  Used by the graph component for node
+            tooltips and the detail panel.  ``None`` when unavailable.
+        years: Year range string in sports notation (e.g. ``"2019–22"``).
+            ``None`` when unavailable.
     """
 
     coach_id: int | str | None
@@ -80,6 +86,8 @@ class ResultRow:
     confidence_flag: str | None = None
     role: str | None = None
     mentor_coach_id: int | str | None = None
+    team: str | None = None
+    years: str | None = None
 
 
 @dataclass
@@ -180,6 +188,9 @@ def _explain_coaching_tree_row(row: dict[str, Any], root_name: str) -> str:
     _flagged = confidence_flag not in (None, "STANDARD")
 
     if role or team:
+        # Map raw abbreviation to semantic display name.
+        role_semantic = role_display_name(role) if role else None
+
         # Build year-range string using sports-notation abbreviation when
         # both endpoints share the same century (e.g. 2019–22).
         year_str = ""
@@ -191,10 +202,10 @@ def _explain_coaching_tree_row(row: dict[str, Any], root_name: str) -> str:
         elif start_year is not None:
             year_str = f" ({start_year})"
 
-        if role and team:
-            location_part = f"{role} at {team}{year_str}"
-        elif role:
-            location_part = f"{role}{year_str}"
+        if role_semantic and team:
+            location_part = f"{role_semantic} at {team}{year_str}"
+        elif role_semantic:
+            location_part = f"{role_semantic}{year_str}"
         else:
             location_part = f"at {team}{year_str}"
 

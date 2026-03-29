@@ -78,7 +78,7 @@ def classify_intent(
         )
         raw = response.text.strip()
         parsed: dict[str, Any] = parse_gemini_json(raw)
-    except (ValueError, Exception) as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("Classifier failed (%s); defaulting to %s", exc, _FALLBACK_INTENT)
         return {"intent": _FALLBACK_INTENT, "confidence": 0.0}
 

@@ -44,6 +44,7 @@ from graphrag.synthesizer import (
     SynthesizedResponse,
     synthesize_response,
 )
+from graphrag.utils import role_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +137,69 @@ def _resolve_mc_coach_code(root_name: str, driver: Driver) -> int | None:
     return record.get("mc_code")
 
 
+def _format_year_range(start: int | None, end: int | None) -> str:
+    """Format a start/end year pair into sports-notation string.
+
+    Args:
+        start: First season year (e.g. ``2019``), or ``None``.
+        end: Last season year (e.g. ``2022``), or ``None``.
+
+    Returns:
+        Year range string like ``"2019–22"`` or ``"2019"``, or ``""``
+        when both values are ``None``.
+    """
+    if start is not None and end is not None:
+        if start == end:
+            return str(start)
+        if end // 100 == start // 100:
+            return f"{start}–{str(end)[-2:]}"
+        return f"{start}–{end}"
+    if start is not None:
+        return str(start)
+    return ""
+
+
+def _build_explain(
+    root_name: str,
+    mentor_name: str,
+    depth: int,
+    stint: dict | None,
+) -> str:
+    """Build a rich F1 explanation string for a coaching-tree mentee.
+
+    Uses stint enrichment data (role, team, years) when available,
+    falling back to a simpler depth-based string.
+
+    Args:
+        root_name: Display name of the tree root coach.
+        mentor_name: Display name of the direct mentor.
+        depth: Hop distance from root.
+        stint: Dict from :func:`get_mentee_stints` with keys
+            ``role_abbr``, ``team``, ``start_year``, ``end_year``,
+            or ``None`` if no stint data was found.
+
+    Returns:
+        F1-style explanation string.
+    """
+    if stint:
+        role_semantic = role_display_name(stint.get("role_abbr"))
+        team = stint.get("team") or ""
+        year_str = _format_year_range(stint.get("start_year"), stint.get("end_year"))
+
+        if team and year_str:
+            location = f"{role_semantic} at {team} ({year_str})"
+        elif team:
+            location = f"{role_semantic} at {team}"
+        else:
+            location = role_semantic
+
+        return f"Included because: {location}, coached under {mentor_name}."
+
+    # Fallback — no stint enrichment available.
+    hop_label = "direct mentee" if depth == 1 else f"depth-{depth} mentee"
+    return f"Included because: {hop_label} in coaching tree (mentored by {mentor_name})."
+
+
 def _fetch_direct_mentees(root_name: str, driver: Driver) -> list[ResultRow]:
     """Return HC coaching-tree rows (depth 1–2) for graph visualization.
 
@@ -144,6 +208,9 @@ def _fetch_direct_mentees(root_name: str, driver: Driver) -> list[ResultRow]:
     to direct McIllece name lookup), then runs a ``max_depth=2``,
     ``role_filter="HC"`` MENTORED traversal — showing the root's direct
     HC mentees and their HC mentees one level deeper.
+
+    Each result row carries a rich F1 explanation with the mentee's
+    semantic role name, overlap team, and year range (when available).
 
     Args:
         root_name: Display name of the root coach (e.g. ``"Nick Saban"``).
@@ -195,6 +262,25 @@ def _fetch_direct_mentees(root_name: str, driver: Driver) -> list[ResultRow]:
                 if rc is not None:
                     depth1_codes.add(rc)
 
+        # Batch-fetch stint context (role at overlap team + year range)
+        # for rich F1 explanation strings.
+        mentee_mentor_pairs: list[tuple[int, int]] = []
+        for row in raw_rows:
+            cc = row.get("coach_code")
+            path_coaches = row.get("path_coaches") or []
+            depth = int(row.get("depth", 0))
+            if cc is None or depth < 1:
+                continue
+            if depth == 1:
+                mentee_mentor_pairs.append((cc, mc_code))
+            else:
+                mentor_name = path_coaches[-2] if len(path_coaches) >= 2 else ""
+                mentor_cc = name_to_code.get(mentor_name)
+                if mentor_cc is not None:
+                    mentee_mentor_pairs.append((cc, mentor_cc))
+
+        stint_map = _graph_traversal.get_mentee_stints(mentee_mentor_pairs, driver)
+
         rows: list[ResultRow] = []
         seen: set[str] = set()
         for row in raw_rows:
@@ -209,17 +295,22 @@ def _fetch_direct_mentees(root_name: str, driver: Driver) -> list[ResultRow]:
             mentor_cc = name_to_code.get(mentor_name) if depth > 1 else None
 
             # Skip depth-2+ nodes whose mentor isn't in our depth-1 set.
-            # This happens when the HC role_filter passes the leaf but the
-            # intermediate node (e.g. an OC) was filtered out.
             if depth > 1 and (mentor_cc is None or mentor_cc not in depth1_codes):
                 continue
 
             seen.add(name)
-            explanation = (
-                f"Direct mentee of {root_name}."
-                if depth == 1
-                else f"Depth-{depth} mentee (via {mentor_name})."
+
+            stint = stint_map.get(cc) if cc is not None else None
+            explanation = _build_explain(root_name, mentor_name, depth, stint)
+
+            # Extract team/years for graph component.
+            team_str = stint.get("team") if stint else None
+            years_str = (
+                _format_year_range(stint.get("start_year"), stint.get("end_year"))
+                if stint
+                else None
             )
+
             rows.append(
                 ResultRow(
                     coach_id=cc,
@@ -229,6 +320,8 @@ def _fetch_direct_mentees(root_name: str, driver: Driver) -> list[ResultRow]:
                     confidence_flag=row.get("confidence_flag") or None,
                     role=role_map.get(cc) if cc is not None else None,
                     mentor_coach_id=mentor_cc,
+                    team=team_str,
+                    years=years_str,
                 )
             )
 
