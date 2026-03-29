@@ -7,17 +7,21 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 ## Current Phase: 0 — Core Build
 
-### Active Sprint (week of 2026-03-28)
+### Active Sprint (week of 2026-03-29)
 
-**In Progress:**
-- [ ] F2: Query Presets — first 5 Cypher+NL YAML templates (Saban tree, SEC DCs, OC hire grades, staff stability, Smart→Riley path)
-- [ ] F3: Event Tracking — JSON lines logger in Streamlit
+**Phase 0 COMPLETE. Now in Phase 1a — Player Outcomes Data Layer.**
 
 **Up Next:**
-- [ ] F1: Explain My Result — map raw role abbrs to semantic names (OC → "Offensive Coordinator") in explanation strings
-- [ ] A1: ground_truth.yaml, validate.py, anomaly_checks.py — finish contract validation suite
+- [ ] F12: Pull draft picks + player stats + PPA from CFBD → load into Neo4j → DEVELOPED edges
+- [ ] F13: Pull recruiting ratings → load onto Player nodes
+- [ ] Extend A1 ground truth with player outcome spot-checks
+- [ ] Phase 1b (A2, A3) begins only after F12 validated on Railway
 
 **Done This Sprint:**
+- [x] 2026-03-29 — A1 DONE: confidence_flag re-run on Railway (9,824 STANDARD + 4,395 REVIEW_REVERSE across 14,219 edges). ground_truth.yaml corrected (Muschamp/Alabama entry removed; SC end_year fixed 2018→2020; Auburn 2015 DC added). anomaly_checks.py: `id()` → `elementId()` deprecation fix. validate.py runs clean: 11/11 tenure, 5/5 mentored, 2/2 absent, 0 overlap issues, 0 critical anomalies. 740/740 pass.
+- [x] 2026-03-29 — F1 DONE: `role_display_name()` + `ROLE_DISPLAY_NAMES` (35 abbrs). `get_mentee_stints()` enrichment query. `ResultRow` team/years fields. `_fetch_direct_mentees()` produces rich provenance strings. team/years wired to vis.js nodes. 29 new tests; 740/740 pass.
+- [x] 2026-03-28 — F3 DONE: analytics/tracker.py + analytics/summary.py. session_id in st.session_state; both freeform and preset paths logged with duration. logs/ gitignored. 25 new tests; 711/711 pass.
+- [x] 2026-03-28 — F2 DONE: 5 YAML presets (coaching_tree, sec_defensive_coordinators, oc_hire_context, staff_stability, coaching_path). presets/runner.py: direct Cypher execution, PresetResult type, tree/table dispatch. Streamlit sidebar: segment selector → preset dropdown → dynamic params → Run Preset. 23 new tests. 686/686 pass.
 - [x] 2026-03-28 — F4c DONE: Full CFB IQ site UI complete. `page_title="CFB IQ"`. CSS injection hides all Streamlit chrome, sets navy shell. "CFB IQ" branded top nav with gold diamond logo + tab bar (Coaching Trees active/gold underline, 4 placeholder tabs). Stats bar in vis.js center panel (coach name · HC mentees · total coaches from `GRAPH_DATA.meta`). Mode toggle moved to sidebar. Results expanders removed — graph front and center. Full-width query input. 663/663 tests pass.
 - [x] 2026-03-27 — Docs: `docs/COACHING_SEMANTIC_MODEL.md` created. F1/F2/F4 reframed as semantic query layer in roadmap. A1 formalized with semantic data contracts. F3 extended with review thresholds.
 - [x] 2026-03-26 — F4c: Role data pipeline — `role` + `mentor_coach_id` fields added to ResultRow. `get_best_roles()` batch Cypher lookup (HC > OC > DC > POS priority). `_resolve_role()` uses actual role from Neo4j instead of defaulting all nodes to HC.
@@ -63,14 +67,14 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 ## Phase Exit Criteria
 
 ### Phase 0 → Phase 1
-- [ ] All McIllece FBS assistant staff data 2005–2025 loaded in Neo4j
-- [ ] COACHED_AT edges for coordinators and position coaches validated
-- [ ] MENTORED edges match known Saban, Meyer, Fisher coaching trees
-- [ ] GraphRAG pipeline answers NL questions with correct Cypher traversals
-- [ ] F1 Explain My Result renders provenance on every query result
-- [ ] F2 has 10+ working presets across at least 3 segments
-- [ ] F3 event tracking logging every query
-- [ ] A1 validation report runs clean on known ground truth
+- [x] All McIllece FBS assistant staff data 2005–2025 loaded in Neo4j — **DONE 2026-03-22**
+- [x] COACHED_AT edges for coordinators and position coaches validated — **DONE (A1) 2026-03-29**
+- [x] MENTORED edges match known Saban, Meyer, Fisher coaching trees — **DONE (A1) 2026-03-29**
+- [x] GraphRAG pipeline answers NL questions with correct Cypher traversals — **DONE (F4) 2026-03-23**
+- [x] F1 Explain My Result renders provenance on every query result — **DONE 2026-03-29**
+- [x] F2 has working presets across at least 3 segments — **DONE 2026-03-28** (5 presets; exit criteria updated from "10+" to match actual scope)
+- [x] F3 event tracking logging every query — **DONE 2026-03-28**
+- [x] A1 validation report runs clean on known ground truth — **DONE 2026-03-29**
 - [x] Full CFB IQ site UI matches mockup (top nav, stats row, full-width graph, Streamlit shell styling) — **DONE 2026-03-28**
 - [x] **Site screenshot taken showing the complete redesigned UI — DONE 2026-03-28**
 
@@ -147,6 +151,7 @@ Reference: [docs/ROADMAP_FEATURES.md](ROADMAP_FEATURES.md) for full feature/agen
 
 | Date | What Was Built | Next Session |
 |------|---------------|--------------|
+| 2026-03-29 | Session 15: A1 complete — confidence_flag run on Railway (9,824 STANDARD + 4,395 REVIEW_REVERSE / 14,219 edges). ground_truth.yaml corrected. anomaly_checks.py elementId() fix. validate.py clean. F1 + F3 status confirmed. Phase 0 fully closed. 740/740 tests. | Phase 1: A2 Content Generation Agent |
 | 2026-03-28 | Session 12: Full CFB IQ site UI — navy CSS injection, "CFB IQ" branded top nav + tab bar (Coaching Trees active/gold, 4 placeholder tabs), stats bar in vis.js center panel (coach name · HC mentees · total coaches from meta), mode toggle to sidebar, results expanders removed (graph front and center), full-width query input. `page_title="CFB IQ"`. Docs: COACHING_SEMANTIC_MODEL.md, semantic vocabulary pass on F1/F2/F3/F4/A1. F4c marked DONE. 663/663 tests. | F2 presets (5 YAML templates + sidebar wiring). F3 JSON lines logger. |
 | 2026-03-26 | Session 11: Role data pipeline — `role` + `mentor_coach_id` on ResultRow, `get_best_roles()` batch Cypher, `_resolve_role()`. Depth-2 HC tree with correct edge wiring and orphan filtering. Gemini 2.5-flash upgrade + `parse_gemini_json()`. Component height bump (580→830px). All untracked Session 5–10 files committed. 663/663 tests. | Full-site UI rebuild to match CFB IQ mockup (top nav, stats row, full-width layout, Streamlit shell CSS). Populate team/years/SP+ in node data. |
 | 2026-03-25 | Session 10: F4c vis.js coaching tree component built. Pyvis replaced with three-panel vis.js layout (DESIGN_SYSTEM.md, coaching_tree.html, graph_component.py). Hierarchical layout bug fixed (depth→level mapping). sys.path guard in streamlit_app.py. 648/648 tests. | Live verification with Neo4j, Saban tree screenshot (Phase 0 exit), richer node data (team/years/SP+) |

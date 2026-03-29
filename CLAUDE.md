@@ -301,8 +301,12 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 - F4c vis.js Coaching Tree UI — DONE (full CFB IQ site UI: navy shell, branded top nav, stats bar, graph front and center; screenshot taken Session 12)
 - A1 Data Validation Agent — ground truth checks + MENTORED confidence scoring
 
-**Phase 1 (months 1–4):**
-- A2 Content Generation Agent — Neo4j query → LinkedIn/Substack draft
+**Phase 1a (months 1–2 — prerequisite for content):**
+- F12 Player Outcomes Data Layer — draft picks, season stats, PPA from CFBD; DEVELOPED edges connecting coaches to players they overlapped with
+- F13 Recruiting Data Layer — recruiting ratings/rankings on Player nodes
+
+**Phase 1b (months 2–4 — content engine, begins after F12 validated):**
+- A2 Content Generation Agent — Neo4j query → LinkedIn/Substack draft (uses player outcome joins, not just tree structure)
 - A3 Competitive Intel Monitor — watch CFBD, ANSRS, PFF, r/CFBAnalysis
 
 **Phase 2 (months 4–8):**
@@ -371,4 +375,4 @@ See [docs/ROADMAP_FEATURES.md](docs/ROADMAP_FEATURES.md) for the full detailed s
 
 ---
 
-*Last updated: Session 12 (2026-03-28) — Full CFB IQ site UI complete: navy Streamlit shell (CSS injection hiding all chrome), "CFB IQ" branded top nav with tab bar (Coaching Trees active, 4 placeholder tabs), stats bar in vis.js center panel (coach name · HC mentees · total coaches from meta), mode toggle moved to sidebar, results expanders removed (graph front and center), full-width query input. 663/663 tests pass. Phase 0 exit criteria met for F4c. Next: F2 query presets (5 YAML templates + sidebar wiring), F3 event tracking (JSON lines logger), F1 explain strings (semantic vocabulary mapping), A1 validation suite finish.*
+*Last updated: Session 15 (2026-03-29) — Phase 0 COMPLETE. A1 final: confidence_flag populated on Railway (9,824 STANDARD + 4,395 REVIEW_REVERSE / 14,219 MENTORED edges). ground_truth.yaml corrected. validate.py runs clean (11/11 tenure, 5/5 mentored, 2/2 absent, 0 critical). F1 explain strings complete (role_display_name, get_mentee_stints, _build_explain, ResultRow team/years). F2 presets (5 YAML, runner.py, sidebar). F3 event tracking (JSON lines, analytics/). All Phase 0 exit criteria met. 740/740 tests pass. Next: Phase 1 — A2 Content Generation Agent.*

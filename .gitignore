@@ -12,6 +12,9 @@ lib/
 # Generated reports
 reports/
 
+# Event logs (F3 — never commit raw usage data)
+logs/
+
 # Python
 __pycache__/
 *.py[cod]

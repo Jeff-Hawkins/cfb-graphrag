@@ -2,7 +2,8 @@
 """Full ingestion → Neo4j load → verification pipeline for CFB GraphRAG.
 
 Run from the project root:
-    python pipeline.py
+    python pipeline.py             # ingest + load + verify
+    python pipeline.py --validate  # same, plus A1 data validation report
 
 Steps:
     1. Pull raw data from CFBD API (skips files that already exist).
@@ -10,6 +11,7 @@ Steps:
     3. Create Neo4j uniqueness constraints for fast MERGE operations.
     4. Load: Teams → Conferences → Coaches → Players → Games.
     5. Run 5 verification Cypher queries and print counts.
+    6. (--validate only) Run A1 ground-truth validation + anomaly checks.
 
 Note on load order: Teams must be loaded before Conferences because
 ``load_conferences`` creates IN_CONFERENCE relationships that require Team
@@ -17,6 +19,7 @@ nodes to already exist.  The stated order (Conferences → Teams) is achieved
 logically here by loading Teams first, then completing the Conferences step.
 """
 
+import argparse
 import os
 import sys
 import logging
@@ -207,6 +210,13 @@ def run_query(driver, title: str, query: str) -> list[dict]:
 
 def main() -> None:
     """Run the full ingestion, load, and verification pipeline."""
+    parser = argparse.ArgumentParser(description="CFB GraphRAG ingestion pipeline.")
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Run A1 data validation report after ingestion (ground-truth + anomaly checks).",
+    )
+    args = parser.parse_args()
 
     # ------------------------------------------------------------------
     # Step 1: Ingestion
@@ -364,6 +374,25 @@ def main() -> None:
 
     driver.close()
     print("\nPipeline complete.")
+
+    # ------------------------------------------------------------------
+    # Step 6: A1 validation (--validate flag)
+    # ------------------------------------------------------------------
+    if args.validate:
+        section("STEP 6: A1 DATA VALIDATION")
+        driver = get_driver(NEO4J_URI, NEO4J_USER, NEO4J_PASS)
+        try:
+            from agents.data_validation.validate import run_validation
+            from agents.data_validation.anomaly_checks import run_anomaly_checks
+            failures = run_validation(driver)
+            critical = run_anomaly_checks(driver)
+            if failures == 0 and critical == 0:
+                print("\n  A1: all checks passed.")
+            else:
+                print(f"\n  A1: {failures} ground-truth failure(s), {critical} critical anomaly(s).")
+                sys.exit(1)
+        finally:
+            driver.close()
 
 
 if __name__ == "__main__":
